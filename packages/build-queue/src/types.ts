@@ -19,7 +19,15 @@ import type {
   BuildStatus,
   Configuration,
 } from '@qmk-web-app/domain';
-import type { ListPage } from '../configurations/types.ts';
+
+/** Same shape the configuration API pages with, so clients see one pagination format. */
+export interface ListPage<T> {
+  items: readonly T[];
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+}
 
 /** What a client is allowed to see about a build. Never a storage key or host path. */
 export interface BuildSummary {
@@ -192,7 +200,16 @@ export interface BuildQueue {
 
   fail(args: FailBuildArgs): Promise<boolean>;
 
-  cancel(args: { buildId: string; workerId: string }): Promise<boolean>;
+  /**
+   * `logReference` is accepted here for the same reason `fail` takes one: a build
+   * cancelled mid-compile has a log worth reading, and a log the build does not
+   * reference is both unreachable by its owner and invisible to the reaper.
+   */
+  cancel(args: {
+    buildId: string;
+    workerId: string;
+    logReference?: string | null;
+  }): Promise<boolean>;
 
   /**
    * Returns builds whose worker stopped heartbeating to the queue, or fails them once

@@ -37,7 +37,7 @@ export function computeIsDraft(document: Configuration): boolean {
  * a single-keyboard catalog is assembled for the configuration being validated
  * rather than materialising all 3,748.
  */
-function catalogFor(store: CatalogStore, version: string, keyboardId: string): Catalog {
+export function catalogFor(store: CatalogStore, version: string, keyboardId: string): Catalog {
   const meta = store.getMeta(version);
   const keyboard = store.getKeyboard(version, keyboardId);
   return {

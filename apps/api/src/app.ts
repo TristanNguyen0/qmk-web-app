@@ -1,6 +1,10 @@
 import Fastify, { type FastifyInstance } from 'fastify';
+import type { ArtifactStore } from '@qmk-web-app/artifact-store';
 import type { CatalogStore } from './catalog-store.ts';
+import type { BuildEnvironment } from './builds/service.ts';
+import type { BuildRepository } from '@qmk-web-app/build-queue';
 import type { ConfigurationRepository } from './configurations/types.ts';
+import { registerBuildRoutes } from './routes/builds.ts';
 import { registerCatalogRoutes } from './routes/catalog.ts';
 import { registerConfigurationRoutes } from './routes/configurations.ts';
 import { registerSessions } from './session.ts';
@@ -9,6 +13,16 @@ export interface BuildAppOptions {
   store: CatalogStore;
   repository: ConfigurationRepository;
   sessionSecret: string;
+  /**
+   * Build request/status/download routes. Omitted in tests that only exercise the
+   * catalog and configuration surfaces; when absent, those routes are simply not
+   * registered rather than being present and broken.
+   */
+  builds?: {
+    repository: BuildRepository;
+    artifacts: ArtifactStore;
+    environment: BuildEnvironment;
+  };
   /** Set Secure on session cookies. Must be true behind HTTPS in production. */
   secureCookies?: boolean;
   logger?: boolean;
@@ -24,6 +38,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
 
   app.addHook('onSend', async (_request, reply, payload) => {
     // Configuration data is per-session and must never be cached by a shared proxy.
+    // Firmware downloads are per-owner and short-lived, so the same applies.
     reply.header('cache-control', 'no-store');
     reply.header('x-content-type-options', 'nosniff');
     return payload;
@@ -38,6 +53,16 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
 
   registerCatalogRoutes(app, options.store);
   registerConfigurationRoutes(app, options.store, options.repository);
+
+  if (options.builds) {
+    registerBuildRoutes(app, {
+      store: options.store,
+      configurations: options.repository,
+      builds: options.builds.repository,
+      artifacts: options.builds.artifacts,
+      environment: options.builds.environment,
+    });
+  }
 
   return app;
 }

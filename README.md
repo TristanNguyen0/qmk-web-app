@@ -7,15 +7,16 @@ Architectural decisions live in [`docs/adr/`](docs/adr/).
 
 ## Status
 
-Phases 0, 1 and 2 are complete. Phase 3 works end to end via CLI but has no queue, storage, or build API.
+Phases 0 through 3 are complete: a user can select a keyboard, edit a keymap, request a build, and
+download compiled firmware.
 
 | Phase | State |
 | --- | --- |
 | 0 — foundations and decisions | **Done.** Stack decided ([ADR 0001](docs/adr/0001-technology-stack.md)), QMK pinned, reproducibility spike passing |
 | 1 — catalog and read-only UI | **Done.** 3,748 keyboards published, read API, visual layout renderer, unsupported-state UX |
 | 2 — saved visual configurations | **Done.** Postgres persistence, revisions, anonymous sessions, layer editor, structured macros, undo/redo, autosave |
-| 3 — generation and server builds | Generation, isolated compile, artifact collection done; **no queue or storage yet** |
-| 4 — verified SOCD support | Not started. Schema exists; generation deliberately refuses it |
+| 3 — generation and server builds | **Done.** Queue, isolated worker, artifact storage, build API, quotas, retention, download from the editor |
+| 4 — verified SOCD support | Not started. Schema exists; validation and generation deliberately refuse it |
 | 5–6 — hardening, flashing | Not started |
 
 ## What works today
@@ -27,14 +28,21 @@ docker build -t qmk-web-app/qmk-build:0.33.13-1 infra/qmk
 
 pnpm catalog:build                     # discover all 3,748 keyboards (~10 min)
 
-node --experimental-strip-types services/worker/scripts/smoke-build.ts catalogs/0.33.13-1
-
 docker compose -f infra/deploy/docker-compose.yml up -d   # Postgres
 pnpm dev                               # API on :3001, web UI on :3000
+pnpm worker                            # build worker, in a second terminal
 ```
 
-The smoke build takes a validated configuration through generation, an isolated compile, and
-artifact collection, then builds it twice and checks the firmware is byte-identical.
+Open a keyboard, edit its keymap, and press **Build firmware**. A `crkbd/rev1` build takes about
+20 seconds end to end.
+
+```bash
+node --experimental-strip-types services/worker/scripts/smoke-build.ts catalogs/0.33.13-1
+```
+
+The smoke build bypasses the queue and takes a validated configuration straight through generation,
+an isolated compile, and artifact collection, then builds it twice and checks the firmware is
+byte-identical.
 
 ### The web UI
 
@@ -52,6 +60,29 @@ artifact collection, then builds it twice and checks the firmware is byte-identi
   owner, so accounts later change only where the owner id comes from.
 - Saves use `If-Match`; a concurrent edit produces a visible conflict rather than a silent
   overwrite.
+- **Build and download**: request a build, watch it progress, cancel it, download the firmware with
+  its SHA-256, or read the sanitized compiler log when it fails. A build compiles a *stored
+  revision*, so the button is disabled until your edits have been saved.
+
+### Builds
+
+A build is a row in `builds` that carries its own queue lease — there is no separate job table
+([ADR 0004](docs/adr/0004-the-builds-table-is-the-queue.md)). The lifecycle:
+
+```text
+POST /v1/configurations/:id/builds   validate, check quota, insert `queued`  (Idempotency-Key required)
+  worker claims it                   UPDATE … FOR UPDATE SKIP LOCKED, lease + heartbeat
+  preparing → building → uploading   re-validate, generate, compile in Docker, collect artifact
+  succeeded                          artifact row + object, sanitized log
+GET  /v1/builds/:id                  poll status
+GET  /v1/builds/:id/artifact         authorized download, streamed by the API
+GET  /v1/builds/:id/log              authorized, redacted, capped
+POST /v1/builds/:id/cancel           cancels a queued build; requests it for a running one
+```
+
+Quotas and retention live in `BUILD_LIMITS` (`packages/domain/src/limits.ts`): 2 concurrent builds
+and 20 per hour per session, a 2-minute lease, 3 attempts, and 7-day artifact and log retention.
+`QueueRunner.maintain()` reclaims leases from dead workers and deletes expired objects.
 
 ### Catalog format
 
@@ -71,8 +102,11 @@ a request.
 
 ```bash
 pnpm typecheck
-pnpm test          # 122 tests, no Docker required
+pnpm test          # 302 tests, no Docker required
 ```
+
+`pnpm test` runs the Postgres half of the repository contract suites too, when a database is
+reachable; it skips them otherwise, so the default run stays hermetic.
 
 ## Pinned QMK revision
 
@@ -88,23 +122,24 @@ and a new build image — never an in-place update.
 
 ```text
 apps/
-  api/             catalog read API (Fastify): keyboards, layouts, keycodes, SOCD capabilities
-  web/             Next.js keyboard picker + visual layout renderer
+  api/             Fastify API: catalog reads, configurations, builds, artifact download
+  web/             Next.js keyboard picker, visual layout renderer, keymap editor, build panel
 packages/
   domain/          typed configuration schema, keycode allowlist, identifier validation,
-                   build state machine, server-side validation
+                   build state machine, product limits, server-side validation
   qmk-catalog/     normalizes extractor output into an immutable, versioned catalog
   qmk-generator/   deterministic keymap generation (JSON only — no C, no Make)
   qmk-sandbox/     the BuildSandbox contract and its hardened Docker implementation
+  build-queue/     BuildRepository + BuildQueue contracts, in-memory and Postgres stores
+  artifact-store/  ArtifactStore contract, key derivation, filesystem and in-memory stores
   qmk-fixtures/    small fixtures captured from real extractions of the pinned tree
 infra/deploy/      docker-compose for local Postgres
 services/
-  worker/          generation + compile + artifact identification + log redaction
+  worker/          queue loop, generation + compile, artifact identification, log redaction,
+                   lease recovery and retention
 infra/qmk/         pinned manifest, build image, catalog extractor, entrypoint
 docs/adr/          architecture decision records
 ```
-
-Not yet built: the job queue, artifact storage, and the build API.
 
 ## Security properties currently enforced
 
@@ -128,6 +163,20 @@ Each is verified by a test or by the smoke build, not just intended:
 - Clients cannot set `id`, `ownerId`, `revision`, or `schemaVersion` — the server assigns them.
 - Updates require `If-Match` and are applied under `SELECT … FOR UPDATE`, so concurrent writers
   cannot both win.
+- Builds, logs, and artifacts are owner-scoped the same way; a cross-session request gets 404.
+- Storage keys are derived from a build id and never returned to a client; downloads are streamed
+  by the API, so there is no URL to share or replay.
+- A build request needs an `Idempotency-Key`, and the key is a unique index — a retried request
+  cannot start a second compile.
+- Every worker write is conditional on holding the lease *and* on the status it is leaving, so a
+  worker whose lease expired cannot finish a build another worker has taken over.
+- A cancelled build's firmware is discarded even if the compile had already succeeded; its log is
+  kept.
+- Per-session quotas cap concurrent and hourly builds; both return `BUILD_QUEUE_LIMITED`.
+- The worker re-validates the stored configuration against the catalog rather than trusting that
+  the API validated it before queueing.
+- The worker has its own database role with no access to `configurations` at all
+  (`apps/api/migrations/003_worker_role.sql`).
 
 ## Known gaps
 
@@ -136,6 +185,8 @@ Each is verified by a test or by the smoke build, not just intended:
 - Only `crkbd/rev1` has been through a real compile; the curated smoke matrix does not exist yet.
   3,743 keyboards are *catalogued*, which is a weaker claim than *known to build*.
 - No real authentication: sessions are anonymous cookies, so clearing cookies loses your work.
-- No job queue, artifact storage, or build API — builds run only from the CLI smoke script.
-- The editor cannot submit builds yet.
+- Artifact storage is a shared directory. The `ArtifactStore` seam is in place, but S3 is not
+  implemented, so the API and the worker must share a filesystem ([ADR 0004](docs/adr/0004-the-builds-table-is-the-queue.md)).
+- The worker polls once a second per idle worker; there is no `LISTEN/NOTIFY` yet.
+- No global build concurrency limit or IP-based rate limiting — only per-session quotas.
 - No end-to-end browser tests yet; the UI is covered by API tests and pure geometry unit tests.

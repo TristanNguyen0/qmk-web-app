@@ -10,12 +10,16 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
+    "@qmk-web-app/artifact-store": "workspace:*",
+    "@qmk-web-app/build-queue": "workspace:*",
     "@qmk-web-app/domain": "workspace:*",
     "@qmk-web-app/qmk-generator": "workspace:*",
     "@qmk-web-app/qmk-sandbox": "workspace:*",
-    "@qmk-web-app/qmk-catalog": "workspace:*"
+    "@qmk-web-app/qmk-catalog": "workspace:*",
+    "pg": "^8.13.1"
   },
   "devDependencies": {
-    "@qmk-web-app/qmk-fixtures": "workspace:*"
+    "@qmk-web-app/qmk-fixtures": "workspace:*",
+    "@types/pg": "^8.11.10"
   }
 }

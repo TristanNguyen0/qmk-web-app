@@ -13,7 +13,6 @@
  */
 import type { ArtifactRecord, BuildRecord, BuildStatus, Configuration } from '@qmk-web-app/domain';
 import { assertTransition, canTransition, isTerminal } from '@qmk-web-app/domain';
-import type { ListPage } from '../configurations/types.ts';
 import type {
   BuildQueue,
   BuildRepository,
@@ -23,6 +22,7 @@ import type {
   CompleteBuildArgs,
   CreateBuildResult,
   FailBuildArgs,
+  ListPage,
   ReapResult,
 } from './types.ts';
 
@@ -190,9 +190,10 @@ export class InMemoryBuildStore implements BuildRepository, BuildQueue {
     from: BuildStatus;
     to: BuildStatus;
   }): Promise<boolean> {
+    // Throws on an illegal transition: that is a bug in the worker, not a lost race.
+    assertTransition(args.from, args.to);
     const build = this.#heldBuild(args.buildId, args.workerId);
     if (!build || build.status !== args.from) return false;
-    if (!canTransition(args.from, args.to)) return false;
     build.status = args.to;
     return true;
   }
@@ -254,11 +255,16 @@ export class InMemoryBuildStore implements BuildRepository, BuildQueue {
     return true;
   }
 
-  async cancel(args: { buildId: string; workerId: string }): Promise<boolean> {
+  async cancel(args: {
+    buildId: string;
+    workerId: string;
+    logReference?: string | null;
+  }): Promise<boolean> {
     const build = this.#heldBuild(args.buildId, args.workerId);
     if (!build || !canTransition(build.status, 'cancelled')) return false;
     build.status = 'cancelled';
     build.failureCode = 'CANCELLED';
+    if (args.logReference != null) build.logReference = args.logReference;
     build.completedAt = new Date().toISOString();
     this.#leases.delete(args.buildId);
     return true;

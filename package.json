@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "qmk:fetch": "node --experimental-strip-types infra/qmk/scripts/fetch-qmk.ts",
     "catalog:build": "node --experimental-strip-types packages/qmk-catalog/scripts/build-catalog.ts",
-    "dev": "pnpm --parallel --filter @qmk-web-app/api --filter @qmk-web-app/web dev"
+    "dev": "pnpm --parallel --filter @qmk-web-app/api --filter @qmk-web-app/web dev",
+    "worker": "node --experimental-strip-types services/worker/src/main.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
