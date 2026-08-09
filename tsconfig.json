@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "packages/*/src/**/*.ts",
+    "packages/*/scripts/**/*.ts",
+    "services/*/src/**/*.ts",
+    "services/*/scripts/**/*.ts",
+    "apps/api/src/**/*.ts",
+    "infra/**/*.ts",
+    "vitest.config.ts"
+  ]
+}

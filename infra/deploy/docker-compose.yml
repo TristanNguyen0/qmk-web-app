@@ -1,0 +1,24 @@
+# Local development dependencies.
+#
+# This is a DEVELOPMENT compose file. Credentials here are deliberately trivial and
+# every service binds to localhost only; nothing in it is suitable for deployment.
+services:
+  postgres:
+    image: postgres:16-alpine
+    # Bound to loopback so the database is never reachable off this machine.
+    ports:
+      - '127.0.0.1:5433:5432'
+    environment:
+      POSTGRES_USER: qwa
+      POSTGRES_PASSWORD: qwa_dev_password
+      POSTGRES_DB: qwa
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U qwa -d qwa']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  postgres-data:

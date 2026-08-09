@@ -1,0 +1,21 @@
+{
+  "name": "@qmk-web-app/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@qmk-web-app/domain": "workspace:*",
+    "@qmk-web-app/qmk-generator": "workspace:*",
+    "@qmk-web-app/qmk-sandbox": "workspace:*",
+    "@qmk-web-app/qmk-catalog": "workspace:*"
+  },
+  "devDependencies": {
+    "@qmk-web-app/qmk-fixtures": "workspace:*"
+  }
+}

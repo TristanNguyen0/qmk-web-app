@@ -1,0 +1,24 @@
+{
+  "name": "@qmk-web-app/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "dev": "node --experimental-strip-types --watch src/server.ts"
+  },
+  "dependencies": {
+    "@qmk-web-app/domain": "workspace:*",
+    "fastify": "^5.2.0",
+    "@qmk-web-app/qmk-catalog": "workspace:*",
+    "pg": "^8.13.1",
+    "@qmk-web-app/qmk-generator": "workspace:*"
+  },
+  "devDependencies": {
+    "@qmk-web-app/qmk-fixtures": "workspace:*",
+    "@types/pg": "^8.11.10"
+  }
+}

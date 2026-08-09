@@ -1,0 +1,22 @@
+{
+  "name": "qmk-web-app",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.20.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p . && pnpm --filter @qmk-web-app/web typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "qmk:fetch": "node --experimental-strip-types infra/qmk/scripts/fetch-qmk.ts",
+    "catalog:build": "node --experimental-strip-types packages/qmk-catalog/scripts/build-catalog.ts",
+    "dev": "pnpm --parallel --filter @qmk-web-app/api --filter @qmk-web-app/web dev"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

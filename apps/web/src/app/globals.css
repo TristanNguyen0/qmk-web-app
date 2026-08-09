@@ -1,0 +1,520 @@
+/*
+ * Deliberately plain CSS for Phase 1. ADR 0001 selects Tailwind + Radix for the
+ * editor; pulling that in before there is an editor to style would be premature.
+ *
+ * Accessibility notes that are load-bearing, not decorative:
+ *  - Focus is always visible, and never removed.
+ *  - State is never signalled by colour alone (see `.key--selected`).
+ *  - Colours meet WCAG AA contrast in both themes.
+ */
+
+:root {
+  --bg: #ffffff;
+  --surface: #f6f7f9;
+  --border: #cbd2d9;
+  --text: #1f2933;
+  --muted: #52606d;
+  --accent: #0b5fff;
+  --accent-contrast: #ffffff;
+  --warn-bg: #fff4e5;
+  --warn-border: #b26a00;
+  --warn-text: #6b3f00;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11161c;
+    --surface: #1b222b;
+    --border: #3d4852;
+    --text: #e8ecf1;
+    --muted: #9aa5b1;
+    --accent: #6ea8ff;
+    --accent-contrast: #0b1220;
+    --warn-bg: #3a2a10;
+    --warn-border: #d99b3a;
+    --warn-text: #f7dbb0;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+}
+.skip-link:focus {
+  left: 1rem;
+  top: 1rem;
+  z-index: 10;
+  padding: 0.5rem 0.75rem;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-radius: 4px;
+}
+
+.site-header {
+  border-bottom: 1px solid var(--border);
+  padding: 0.875rem 1.5rem;
+}
+.brand {
+  color: var(--text);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin: 0 0 0.25rem;
+}
+h2 {
+  font-size: 1.125rem;
+  margin: 2rem 0 0.75rem;
+}
+.muted {
+  color: var(--muted);
+}
+
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Catalog provenance banner */
+.provenance {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+  margin-bottom: 1.25rem;
+}
+.provenance code {
+  color: var(--text);
+}
+
+/* Search + keyboard list */
+.search-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+.search-form input {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  font-size: 1rem;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.search-form button {
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.keyboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.75rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.keyboard-card {
+  display: block;
+  padding: 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+}
+.keyboard-card:hover {
+  border-color: var(--accent);
+}
+.keyboard-card__id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.keyboard-card__meta {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  margin-top: 0.375rem;
+}
+
+/* Unsupported states are explained, never hidden behind a dead end. */
+.unsupported-badge {
+  display: inline-block;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid var(--warn-border);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.notice {
+  border: 1px solid var(--warn-border);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  border-radius: 6px;
+  padding: 0.875rem 1rem;
+}
+
+.pagination {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-top: 1.25rem;
+  font-size: 0.875rem;
+}
+.pagination a {
+  color: var(--accent);
+}
+
+/* Keyboard renderer */
+.layout-wrapper {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 1.5rem;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .layout-wrapper {
+    grid-template-columns: 1fr;
+  }
+}
+
+.keyboard {
+  max-width: 100%;
+  height: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.key rect {
+  fill: var(--bg);
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.key:hover rect {
+  stroke: var(--accent);
+}
+.key__label {
+  fill: var(--muted);
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  pointer-events: none;
+}
+/*
+ * Selected state uses THREE independent signals — fill, a thicker stroke, and an
+ * inset ring — so it is legible without colour perception and at any zoom.
+ */
+.key--selected rect {
+  fill: var(--accent);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.key--selected .key__selection-ring {
+  stroke: var(--accent-contrast);
+  stroke-width: 2;
+  fill: none;
+}
+.key--selected .key__label {
+  fill: var(--accent-contrast);
+  font-weight: 700;
+}
+
+.inspector {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.875rem;
+  background: var(--surface);
+  font-size: 0.875rem;
+}
+.inspector dl {
+  margin: 0;
+  display: grid;
+  gap: 0.625rem;
+}
+.inspector dt {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.inspector dd {
+  margin: 0.125rem 0 0;
+}
+
+.layout-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0;
+  list-style: none;
+}
+.layout-tab {
+  display: inline-block;
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  text-decoration: none;
+  color: var(--text);
+  font-size: 0.875rem;
+}
+/* Current tab is marked by weight and a filled background, not colour alone. */
+.layout-tab[aria-current='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 700;
+}
+
+.spec-table {
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+.spec-table th,
+.spec-table td {
+  text-align: left;
+  padding: 0.375rem 1rem 0.375rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.spec-table th {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* ── Phase 2: editor ─────────────────────────────────────────────────────── */
+
+.site-header {
+  display: flex;
+  align-items: baseline;
+  gap: 1.5rem;
+}
+.site-header nav {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.875rem;
+}
+.site-header nav a {
+  color: var(--muted);
+}
+
+/* Available to screen readers, invisible on screen. Not `display:none`, which
+   would remove it from the accessibility tree entirely. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+button {
+  font: inherit;
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+select,
+input[type='number'],
+input[type='text'],
+input[type='search'] {
+  font: inherit;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.editor__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.editor__name {
+  flex: 1;
+  min-width: 12rem;
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+}
+.editor__save-state {
+  font-size: 0.8125rem;
+  min-width: 9rem;
+  text-align: right;
+}
+
+/* Unassigned keys are dashed as well as pale, so the state survives greyscale. */
+.key--unassigned rect {
+  stroke-dasharray: 4 3;
+}
+
+.picker {
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+.picker__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-bottom: 0.625rem;
+}
+.picker__tab {
+  font-size: 0.8125rem;
+  padding: 0.25rem 0.5rem;
+}
+.picker__tab--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 700;
+}
+.picker__body {
+  display: grid;
+  gap: 0.5rem;
+  max-height: 22rem;
+  overflow-y: auto;
+}
+.picker__search {
+  width: 100%;
+}
+.picker__group h4 {
+  margin: 0.375rem 0 0.25rem;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.picker__keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+.picker__key {
+  min-width: 2.25rem;
+  padding: 0.25rem 0.375rem;
+  font-size: 0.75rem;
+}
+.picker__key[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 700;
+}
+.picker__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+.picker__clear {
+  margin-top: 0.625rem;
+  width: 100%;
+}
+
+.macros {
+  margin-top: 2rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+.macro-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+.macro {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  background: var(--surface);
+}
+.macro__header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.macro__header input {
+  flex: 1;
+  min-width: 8rem;
+}
+.macro__steps ol {
+  display: grid;
+  gap: 0.375rem;
+  padding-left: 1.25rem;
+  margin: 0.625rem 0;
+}
+.macro__steps li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.macro__adder {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  align-items: center;
+}
+
+.create-config {
+  margin-top: 1rem;
+}
+.create-config button {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+}

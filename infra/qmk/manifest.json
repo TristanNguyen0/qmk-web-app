@@ -1,0 +1,18 @@
+{
+  "$comment": "Single source of truth for the pinned QMK revision. See claude.md § QMK source-tree catalog discovery. Changing any field here is a NEW catalog version and a NEW build image — never an in-place mutation.",
+  "manifestVersion": 1,
+  "upstreamUrl": "https://github.com/qmk/qmk_firmware.git",
+  "tag": "0.33.13",
+  "commit": "332fa30e173e5b0ecc0c70ff166974b6db86525e",
+  "fetchedAt": "2026-08-08",
+  "buildImage": {
+    "name": "qmk-web-app/qmk-build",
+    "tag": "0.33.13-1",
+    "digest": null,
+    "$comment": "digest is populated by infra/qmk/scripts/build-image.sh once the image is built, and is recorded with every build."
+  },
+  "catalog": {
+    "version": "0.33.13-1",
+    "$comment": "Catalog version is independent of the QMK tag so a normalizer change can republish without a QMK bump."
+  }
+}

@@ -1,0 +1,221 @@
+/**
+ * Catalog read routes.
+ *
+ * These are the interfaces claude.md § Catalog interfaces specifies:
+ * `listKeyboards`, `getKeyboard`, `listKeycodes`, `listSocdCapabilities`.
+ *
+ * Two rules shape every handler here:
+ *  - The frontend renders only from these responses and carries no catalog of its
+ *    own, so a response must contain everything needed to draw a keyboard.
+ *  - A keyboard id from the URL is untrusted until it is matched against the loaded
+ *    catalog (claude.md rule 5). It is never used to touch the filesystem.
+ */
+import type { FastifyInstance, FastifyReply } from 'fastify';
+import {
+  ERROR_CODES,
+  SUPPORTED_KEYCODES,
+  isValidKeyboardIdShape,
+  type SupportedCatalogKeyboard,
+} from '@qmk-web-app/domain';
+import { CatalogNotFoundError, MAX_PAGE_SIZE, type CatalogStore } from '../catalog-store.ts';
+import { API_VERSION, sendBadRequest, sendNotFound } from '../errors.ts';
+
+interface VersionParams {
+  catalogVersion: string;
+}
+
+interface WildcardParams extends VersionParams {
+  '*': string;
+}
+
+interface ListQuery {
+  search?: string;
+  includeUnsupported?: string;
+  page?: string;
+  pageSize?: string;
+}
+
+function parsePositiveInt(value: string | undefined, label: string): number | undefined {
+  if (value === undefined || value === '') return undefined;
+  if (!/^\d{1,6}$/.test(value)) throw new RangeError(`${label} must be a positive integer`);
+  const parsed = Number(value);
+  if (parsed < 1) throw new RangeError(`${label} must be at least 1`);
+  return parsed;
+}
+
+/**
+ * Resolves the catalog version segment. `latest` is accepted as a convenience for the
+ * UI, but the response always names the concrete version it resolved to, so a client
+ * can pin to it — configurations must never be stored against "latest"
+ * (claude.md § Source management).
+ */
+function resolveVersion(store: CatalogStore, requested: string): string {
+  if (requested === 'latest') return store.activeVersion;
+  return store.getMeta(requested).catalogVersion;
+}
+
+export function registerCatalogRoutes(app: FastifyInstance, store: CatalogStore): void {
+  // Index: what catalog versions exist and which one is active.
+  app.get('/v1/catalog', async () => ({
+    apiVersion: API_VERSION,
+    activeVersion: store.activeVersion,
+    versions: store.versions,
+  }));
+
+  app.get<{ Params: VersionParams }>('/v1/catalog/:catalogVersion', async (request, reply) => {
+    const version = resolveVersion(store, request.params.catalogVersion);
+    // Provenance travels with the data so a client can show exactly which QMK
+    // revision it is looking at.
+    return reply.send({ apiVersion: API_VERSION, catalog: store.getMeta(version) });
+  });
+
+  app.get<{ Params: VersionParams; Querystring: ListQuery }>(
+    '/v1/catalog/:catalogVersion/keyboards',
+    async (request, reply) => {
+      const version = resolveVersion(store, request.params.catalogVersion);
+
+      let page: number | undefined;
+      let pageSize: number | undefined;
+      try {
+        page = parsePositiveInt(request.query.page, 'page');
+        pageSize = parsePositiveInt(request.query.pageSize, 'pageSize');
+      } catch (error) {
+        return sendBadRequest(reply, (error as Error).message);
+      }
+      if (pageSize !== undefined && pageSize > MAX_PAGE_SIZE) {
+        return sendBadRequest(reply, `pageSize must be at most ${MAX_PAGE_SIZE}`);
+      }
+
+      const result = store.listKeyboards(version, {
+        ...(request.query.search ? { search: request.query.search } : {}),
+        includeUnsupported: request.query.includeUnsupported === 'true',
+        ...(page !== undefined ? { page } : {}),
+        ...(pageSize !== undefined ? { pageSize } : {}),
+      });
+
+      return reply.send({ apiVersion: API_VERSION, catalogVersion: version, ...result });
+    },
+  );
+
+  // Keyboard ids contain slashes (`crkbd/rev1`), so this is a wildcard route.
+  app.get<{ Params: WildcardParams }>(
+    '/v1/catalog/:catalogVersion/keyboards/*',
+    async (request, reply) => {
+      const version = resolveVersion(store, request.params.catalogVersion);
+      const keyboardId = request.params['*'];
+
+      // Shape check first: a malformed id is a bad request, and must never reach a
+      // lookup that could be backed by a path.
+      if (!isValidKeyboardIdShape(keyboardId)) {
+        return sendBadRequest(reply, 'keyboardId is not a valid keyboard identifier');
+      }
+
+      const entry = store.getKeyboard(version, keyboardId);
+      if (!entry) {
+        return sendNotFound(reply, 'no such keyboard in this catalog version');
+      }
+
+      if (!entry.supported) {
+        // Unsupported keyboards are surfaced deliberately, with the reason, so the UI
+        // can explain the absence instead of showing a dead end. `detail` is operator
+        // -facing and is not included.
+        return reply.code(409).send({
+          apiVersion: API_VERSION,
+          error: {
+            code: ERROR_CODES.CATALOG_KEYBOARD_UNAVAILABLE,
+            message: 'this keyboard is not supported by the active catalog',
+          },
+          keyboard: {
+            keyboardId: entry.keyboardId,
+            supported: false,
+            unsupportedReason: entry.reason,
+          },
+        });
+      }
+
+      return reply.send({
+        apiVersion: API_VERSION,
+        catalogVersion: version,
+        keyboard: projectKeyboard(entry),
+      });
+    },
+  );
+
+  // The product's supported keycode catalog. Deliberately not the full QMK set
+  // (claude.md § Visual keymap editor: "Start with a compact keycode catalog").
+  app.get<{ Params: VersionParams }>(
+    '/v1/catalog/:catalogVersion/keycodes',
+    async (request, reply) => {
+      const version = resolveVersion(store, request.params.catalogVersion);
+      return reply.send({
+        apiVersion: API_VERSION,
+        catalogVersion: version,
+        keycodeSpecVersion: store.getMeta(version).keycodeSpecVersion,
+        keycodes: SUPPORTED_KEYCODES,
+      });
+    },
+  );
+
+  app.get<{ Params: WildcardParams }>(
+    '/v1/catalog/:catalogVersion/socd-capabilities/*',
+    async (request, reply) => {
+      const version = resolveVersion(store, request.params.catalogVersion);
+      const keyboardId = request.params['*'];
+      if (!isValidKeyboardIdShape(keyboardId)) {
+        return sendBadRequest(reply, 'keyboardId is not a valid keyboard identifier');
+      }
+      if (!store.getSupportedKeyboard(version, keyboardId)) {
+        return sendNotFound(reply, 'no such supported keyboard in this catalog version');
+      }
+
+      // claude.md rule 9: SOCD must be verified against the pinned revision before it
+      // is offered. It has not been, so the honest answer is "no policies", not an
+      // optimistic list. See docs/adr and the Phase 4 plan.
+      return reply.send({
+        apiVersion: API_VERSION,
+        catalogVersion: version,
+        keyboardId,
+        available: false,
+        reason: 'SOCD support has not been verified for this QMK revision',
+        policies: [],
+      });
+    },
+  );
+
+  app.setErrorHandler((error, _request, reply: FastifyReply) => {
+    if (error instanceof CatalogNotFoundError) {
+      return sendNotFound(reply, error.message);
+    }
+    app.log.error({ err: error }, 'unhandled API error');
+    // Never leak an internal message to the client.
+    return reply.code(500).send({
+      apiVersion: API_VERSION,
+      error: { code: 'INTERNAL_ERROR', message: 'internal error' },
+    });
+  });
+}
+
+/** Full detail for one keyboard: everything the renderer needs, nothing internal. */
+function projectKeyboard(kb: SupportedCatalogKeyboard) {
+  return {
+    keyboardId: kb.keyboardId,
+    supported: true as const,
+    displayName: kb.displayName,
+    manufacturer: kb.manufacturer,
+    url: kb.url,
+    processor: kb.processor,
+    bootloader: kb.bootloader,
+    platform: kb.platform,
+    features: kb.features,
+    layouts: kb.layouts.map((layout) => ({
+      name: layout.name,
+      positionCount: layout.positions.length,
+      positions: layout.positions,
+    })),
+    provenance: {
+      keyboardFolder: kb.provenance.keyboardFolder,
+      qmkCommit: kb.provenance.qmkCommit,
+      parseWarnings: kb.provenance.parseWarnings,
+    },
+  };
+}
