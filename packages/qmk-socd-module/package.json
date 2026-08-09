@@ -1,0 +1,15 @@
+{
+  "name": "@qmk-web-app/qmk-socd-module",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "@qmk-web-app/domain": "workspace:*"
+  }
+}

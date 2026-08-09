@@ -16,7 +16,7 @@ function layer(index: number, bindings: Layer['bindings'] = {}): Layer {
 }
 
 function doc(overrides: Partial<EditorDocument> = {}): EditorDocument {
-  return { name: 'Test', layers: [layer(0)], macros: [], ...overrides };
+  return { name: 'Test', layers: [layer(0)], macros: [], socd: null, ...overrides };
 }
 
 function state(document = doc()): EditorState {
@@ -246,5 +246,44 @@ describe('describeBinding', () => {
 
   it('returns null for an unassigned position', () => {
     expect(describeBinding(undefined, [])).toBeNull();
+  });
+});
+
+describe('SOCD', () => {
+  const socd = {
+    enabled: true,
+    policyId: 'neutral',
+    directionalKeys: { up: 0, down: 1, left: 2, right: 3 },
+    directionalKeycodes: { up: 'KC_W', down: 'KC_S', left: 'KC_A', right: 'KC_D' },
+  } as const;
+
+  it('stores the SOCD configuration on the document', () => {
+    const next = run(state(), { type: 'set_socd', socd });
+    expect(next.document.socd?.enabled).toBe(true);
+    expect(next.dirty).toBe(true);
+  });
+
+  it('binds the four directional positions on the base layer to match', () => {
+    // The server refuses a SOCD configuration whose base layer disagrees, so the
+    // editor keeps them in step rather than letting the user save something invalid.
+    const next = run(state(), { type: 'set_socd', socd });
+    const base = next.document.layers.find((l) => l.index === 0)!;
+    expect(base.bindings['0']).toEqual({ kind: 'keycode', keycode: 'KC_W' });
+    expect(base.bindings['1']).toEqual({ kind: 'keycode', keycode: 'KC_S' });
+    expect(base.bindings['2']).toEqual({ kind: 'keycode', keycode: 'KC_A' });
+    expect(base.bindings['3']).toEqual({ kind: 'keycode', keycode: 'KC_D' });
+  });
+
+  it('leaves the base layer alone when SOCD is turned off', () => {
+    const withSocd = run(state(), { type: 'set_socd', socd });
+    const off = run(withSocd, { type: 'set_socd', socd: null });
+    expect(off.document.socd).toBeNull();
+    // The keys stay bound; disabling SOCD is not a reason to blank someone's keymap.
+    expect(off.document.layers[0]!.bindings['0']).toEqual({ kind: 'keycode', keycode: 'KC_W' });
+  });
+
+  it('is undoable like any other edit', () => {
+    const next = run(state(), { type: 'set_socd', socd }, { type: 'undo' });
+    expect(next.document.socd).toBeNull();
   });
 });

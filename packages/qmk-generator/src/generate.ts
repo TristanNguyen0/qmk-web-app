@@ -11,6 +11,11 @@
  * `up`/`delay`) directly in `keymap.json`, so every MVP feature is expressible as
  * pure JSON data that QMK itself compiles.
  *
+ * SOCD (phase 4) keeps that property rather than spending it. Its implementation is
+ * static first-party C in `@qmk-web-app/qmk-socd-module`, copied into the workspace
+ * unmodified; the configurable part reaches the firmware as module keycode tokens and
+ * one `modules` entry in this same JSON. See docs/adr/0005.
+ *
  * Consequences worth keeping:
  *  - No user-controlled value is ever interpolated into a C string.
  *  - Every keycode token emitted comes from the domain allowlist.
@@ -19,20 +24,23 @@
  */
 import {
   LIMITS,
+  SOCD_VERIFIED_KEYBOARDS,
   generatedKeymapName,
   isSupportedKeycode,
+  socdModuleKeycode,
   type Binding,
   type Configuration,
   type Macro,
   type MacroStep,
   type SupportedCatalogKeyboard,
 } from '@qmk-web-app/domain';
+import { SOCD_MODULE_ID } from '@qmk-web-app/qmk-socd-module';
 
 /**
  * Bumped whenever generated output could change for an unchanged configuration.
  * Persisted with every configuration and build (claude.md § Configuration model).
  */
-export const GENERATOR_VERSION = '1.0.0';
+export const GENERATOR_VERSION = '1.1.0';
 
 /**
  * QMK defines QK_MACRO_0 through QK_MACRO_31 at the pinned revision
@@ -60,6 +68,12 @@ export interface GenerationResult {
   keymapName: string;
   /** The exact `qmk compile` target arguments the worker must use. */
   compileTarget: { keyboard: string; keymap: string };
+  /**
+   * True when `keymap.json` references the SOCD community module, and therefore when
+   * the worker must place that module in the userspace. Reported rather than re-derived
+   * so the two cannot disagree about whether the build needs it.
+   */
+  requiresSocdModule: boolean;
   generatorVersion: string;
   totalBytes: number;
 }
@@ -216,9 +230,11 @@ export function generateKeymap(options: GenerateOptions): GenerationResult {
   if (configuration.keyboardId !== keyboard.keyboardId) {
     throw new GenerationError('configuration and catalog keyboard record disagree');
   }
-  if (configuration.socd?.enabled) {
-    // claude.md rule 9: SOCD must be verified against the pinned revision first.
-    throw new GenerationError('SOCD generation is not implemented for this QMK revision');
+  const socd = configuration.socd?.enabled ? configuration.socd : null;
+  if (socd && !SOCD_VERIFIED_KEYBOARDS.has(configuration.keyboardId)) {
+    // Defence in depth: validation refuses this first, but generation is the last gate
+    // before a compiler, so it does not assume validation ran (claude.md rule 9).
+    throw new GenerationError(`SOCD is not compile-verified for ${configuration.keyboardId}`);
   }
 
   const layout = keyboard.layouts.find((l) => l.name === configuration.layoutId);
@@ -235,12 +251,40 @@ export function generateKeymap(options: GenerateOptions): GenerationResult {
 
   const layers = [...configuration.layers].sort((a, b) => a.index - b.index);
 
+  /**
+   * SOCD replaces the base layer's binding at each of the four directional positions
+   * with the module keycode that carries both the direction and the policy.
+   *
+   * Base layer only, deliberately. A directional position may be something else
+   * entirely on a raised layer, and SOCD must not reach across layers and change it.
+   * QMK resolves a key's release against the layer that was active when it was pressed,
+   * so a SOCD keycode always sees a matched press/release pair even if the user changes
+   * layer mid-hold (claude.md § SOCD Cleaner requirement 5).
+   */
+  const socdOverrides = new Map<number, string>();
+  if (socd) {
+    for (const [direction, position] of Object.entries(socd.directionalKeys)) {
+      const keycode = socd.directionalKeycodes[direction as keyof typeof socd.directionalKeycodes];
+      const token = socdModuleKeycode(socd.policyId, keycode);
+      if (!token) {
+        throw new GenerationError(
+          `no SOCD module keycode exists for ${keycode} under policy ${socd.policyId}`,
+        );
+      }
+      socdOverrides.set(position, token);
+    }
+  }
+
   // Every layer is emitted as a dense array covering every position in the layout, in
   // layout order. Unassigned positions become KC_NO on the base layer and
   // KC_TRANSPARENT above it — the standard QMK meaning, applied explicitly rather
   // than left to chance.
   const renderedLayers = layers.map((layer) =>
     layout.positions.map((position) => {
+      if (layer.index === 0) {
+        const override = socdOverrides.get(position.index);
+        if (override) return override;
+      }
       const binding = layer.bindings[String(position.index)];
       if (!binding) return layer.index === 0 ? 'KC_NO' : 'KC_TRANSPARENT';
       return renderBinding(binding, macroIndexById);
@@ -256,6 +300,12 @@ export function generateKeymap(options: GenerateOptions): GenerationResult {
   };
   if (macros.length > 0) {
     keymapJson['macros'] = renderMacros(macros);
+  }
+  if (socd) {
+    // `modules` is a first-class key of the pinned revision's keymap.jsonschema, and
+    // the value is the module's path under `modules/` — a constant from the module
+    // package, never anything a user supplied.
+    keymapJson['modules'] = [SOCD_MODULE_ID];
   }
 
   const userspaceJson = {
@@ -282,6 +332,7 @@ export function generateKeymap(options: GenerateOptions): GenerationResult {
     files,
     keymapName,
     compileTarget: { keyboard: keyboard.keyboardId, keymap: keymapName },
+    requiresSocdModule: socd !== null,
     generatorVersion: GENERATOR_VERSION,
     totalBytes,
   };

@@ -42,6 +42,32 @@ function validBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** A create body with SOCD enabled and base-layer bindings that agree with it. */
+function socdBody(overrides: Record<string, unknown> = {}) {
+  return validBody({
+    layers: [
+      {
+        id: '33333333-3333-4333-8333-333333333331',
+        index: 0,
+        name: 'Base',
+        bindings: {
+          '0': { kind: 'keycode', keycode: 'KC_W' },
+          '1': { kind: 'keycode', keycode: 'KC_S' },
+          '2': { kind: 'keycode', keycode: 'KC_A' },
+          '3': { kind: 'keycode', keycode: 'KC_D' },
+        },
+      },
+    ],
+    socd: {
+      enabled: true,
+      policyId: 'neutral',
+      directionalKeys: { up: 0, down: 1, left: 2, right: 3 },
+      directionalKeycodes: { up: 'KC_W', down: 'KC_S', left: 'KC_A', right: 'KC_D' },
+    },
+    ...overrides,
+  });
+}
+
 /** A session is just a cookie; two different cookies are two different owners. */
 async function newSession(): Promise<string> {
   const res = await app.inject({ method: 'GET', url: '/health' });
@@ -189,21 +215,39 @@ describe('creating configurations', () => {
     expect(res.statusCode).toBe(422);
   });
 
-  it('refuses to enable SOCD', async () => {
+  it('accepts SOCD on a compile-verified keyboard', async () => {
+    const cookie = await newSession();
+    const res = await create(cookie, socdBody());
+    expect(res.statusCode).toBe(201);
+    expect(res.json()['configuration']['socd']['enabled']).toBe(true);
+    expect(res.json()['configuration']['socd']['policyId']).toBe('neutral');
+  });
+
+  it('refuses SOCD on a keyboard that has not been compile-verified', async () => {
     const cookie = await newSession();
     const res = await create(
       cookie,
-      validBody({
+      socdBody({ keyboardId: 'planck/rev6', layoutId: 'LAYOUT_ortho_4x12' }),
+    );
+    expect(res.statusCode).toBe(409);
+    expect(res.json()['error']['code']).toBe('CAPABILITY_UNAVAILABLE');
+  });
+
+  it('refuses SOCD whose directions do not oppose each other', async () => {
+    const cookie = await newSession();
+    const res = await create(
+      cookie,
+      socdBody({
         socd: {
           enabled: true,
           policyId: 'neutral',
           directionalKeys: { up: 0, down: 1, left: 2, right: 3 },
-          directionalKeycodes: { up: 'KC_W', down: 'KC_S', left: 'KC_A', right: 'KC_D' },
+          directionalKeycodes: { up: 'KC_W', down: 'KC_RIGHT', left: 'KC_A', right: 'KC_D' },
         },
       }),
     );
-    expect(res.statusCode).toBe(409);
-    expect(res.json()['error']['code']).toBe('CAPABILITY_UNAVAILABLE');
+    expect(res.statusCode).toBe(422);
+    expect(res.json()['error']['code']).toBe('CONFIG_INVALID');
   });
 });
 

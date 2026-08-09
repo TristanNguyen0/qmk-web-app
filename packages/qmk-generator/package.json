@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@qmk-web-app/domain": "workspace:*"
+    "@qmk-web-app/domain": "workspace:*",
+    "@qmk-web-app/qmk-socd-module": "workspace:*"
   },
   "devDependencies": {
     "@qmk-web-app/qmk-fixtures": "workspace:*"

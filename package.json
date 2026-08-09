@@ -12,6 +12,8 @@
     "test:watch": "vitest",
     "qmk:fetch": "node --experimental-strip-types infra/qmk/scripts/fetch-qmk.ts",
     "catalog:build": "node --experimental-strip-types packages/qmk-catalog/scripts/build-catalog.ts",
+    "socd:manifest": "node --experimental-strip-types packages/qmk-socd-module/scripts/write-manifest.ts",
+    "socd:matrix": "node --experimental-strip-types services/worker/scripts/socd-compile-matrix.ts",
     "dev": "pnpm --parallel --filter @qmk-web-app/api --filter @qmk-web-app/web dev",
     "worker": "node --experimental-strip-types services/worker/src/main.ts"
   },

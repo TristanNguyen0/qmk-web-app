@@ -116,12 +116,21 @@ importers:
       '@qmk-web-app/domain':
         specifier: workspace:*
         version: link:../domain
+      '@qmk-web-app/qmk-socd-module':
+        specifier: workspace:*
+        version: link:../qmk-socd-module
     devDependencies:
       '@qmk-web-app/qmk-fixtures':
         specifier: workspace:*
         version: link:../qmk-fixtures
 
   packages/qmk-sandbox: {}
+
+  packages/qmk-socd-module:
+    devDependencies:
+      '@qmk-web-app/domain':
+        specifier: workspace:*
+        version: link:../domain
 
   services/worker:
     dependencies:
@@ -143,6 +152,9 @@ importers:
       '@qmk-web-app/qmk-sandbox':
         specifier: workspace:*
         version: link:../../packages/qmk-sandbox
+      '@qmk-web-app/qmk-socd-module':
+        specifier: workspace:*
+        version: link:../../packages/qmk-socd-module
       pg:
         specifier: ^8.13.1
         version: 8.22.0

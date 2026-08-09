@@ -27,6 +27,7 @@ import {
   writeGeneratedFiles,
 } from '@qmk-web-app/qmk-generator';
 import type { BuildSandbox, SandboxLimits } from '@qmk-web-app/qmk-sandbox';
+import { SocdModuleError, materializeSocdModule } from '@qmk-web-app/qmk-socd-module';
 import { ArtifactError, collectArtifact, type CollectedArtifact } from './collect-artifact.ts';
 import { redactLog } from './redact.ts';
 
@@ -80,8 +81,14 @@ export async function runBuild(options: RunBuildOptions): Promise<RunBuildResult
     try {
       generation = generateKeymap({ configuration, keyboard, buildId });
       writeGeneratedFiles(layout, generation);
+      if (generation.requiresSocdModule) {
+        // Static, digest-verified first-party source — not generated output, which is
+        // why it goes in through its own package rather than the generated-file
+        // allowlist (docs/adr/0005).
+        materializeSocdModule(layout.userspaceDir);
+      }
     } catch (error) {
-      if (error instanceof GenerationError) {
+      if (error instanceof GenerationError || error instanceof SocdModuleError) {
         return {
           status: 'failed',
           failureCode: 'GENERATION_FAILED',

@@ -10,7 +10,11 @@ import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { KeymapEditor } from '../../../components/KeymapEditor.tsx';
 import { fetchKeyboard } from '../../../lib/api.ts';
-import type { ConfigurationResponse, SupportedKeycode } from '../../../lib/client.ts';
+import type {
+  ConfigurationResponse,
+  SocdCapabilitiesResponse,
+  SupportedKeycode,
+} from '../../../lib/client.ts';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,10 +47,15 @@ export default async function EditorPage({ params }: PageProps) {
 
   const configuration = configBody.configuration;
 
-  const [keyboardResult, keycodesBody] = await Promise.all([
+  const [keyboardResult, keycodesBody, socdCapabilities] = await Promise.all([
     fetchKeyboard(configuration.keyboardId, configuration.catalogVersion),
     apiGet<{ keycodes: SupportedKeycode[] }>(
       `/v1/catalog/${configuration.catalogVersion}/keycodes`,
+    ),
+    // Whether SOCD is offered is the server's answer, per keyboard — the editor never
+    // decides it locally (claude.md § Catalog interfaces: listSocdCapabilities).
+    apiGet<SocdCapabilitiesResponse>(
+      `/v1/catalog/${configuration.catalogVersion}/socd-capabilities/${configuration.keyboardId}`,
     ),
   ]);
 
@@ -91,6 +100,7 @@ export default async function EditorPage({ params }: PageProps) {
         configuration={configuration}
         positions={layout.positions}
         keycodes={keycodesBody?.keycodes ?? []}
+        socdCapabilities={socdCapabilities}
       />
 
       <p style={{ marginTop: '2rem' }}>

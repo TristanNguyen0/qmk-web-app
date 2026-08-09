@@ -10,13 +10,21 @@
  * Undo/redo is snapshot-based over the *document* only. Selection and UI state are
  * deliberately excluded: undoing should reverse an edit, not move the cursor around.
  */
-import { LIMITS, type Binding, type Layer, type Macro } from '@qmk-web-app/domain';
+import {
+  LIMITS,
+  type Binding,
+  type Layer,
+  type Macro,
+  type SocdConfiguration,
+} from '@qmk-web-app/domain';
 
 /** The editable part of a configuration. Server-controlled fields are not here. */
 export interface EditorDocument {
   name: string;
   layers: Layer[];
   macros: Macro[];
+  /** Null when the user has never configured SOCD for this keyboard. */
+  socd: SocdConfiguration | null;
 }
 
 export interface EditorState {
@@ -44,6 +52,7 @@ export type EditorAction =
   | { type: 'add_macro'; macro: Macro }
   | { type: 'update_macro'; macro: Macro }
   | { type: 'remove_macro'; macroId: string }
+  | { type: 'set_socd'; socd: SocdConfiguration | null }
   | { type: 'undo' }
   | { type: 'redo' }
   | { type: 'saved'; revision: number };
@@ -202,6 +211,29 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
         for (const [key, binding] of Object.entries(layer.bindings)) {
           if (binding.kind === 'macro' && binding.macroId === action.macroId) {
             delete layer.bindings[key];
+          }
+        }
+      }
+      return withHistory(state, next);
+    }
+
+    case 'set_socd': {
+      const next = clone(state.document);
+      next.socd = action.socd;
+      // SOCD resolves the base-layer binding at each directional position, so those
+      // bindings must actually be those keycodes — the server rejects the
+      // configuration otherwise. Writing them here keeps the rendered keymap and the
+      // SOCD panel showing the same thing, rather than letting the user save something
+      // the server will refuse.
+      if (action.socd?.enabled) {
+        const base = layerAt(next, 0);
+        if (base) {
+          for (const [direction, position] of Object.entries(action.socd.directionalKeys)) {
+            const keycode =
+              action.socd.directionalKeycodes[
+                direction as keyof typeof action.socd.directionalKeycodes
+              ];
+            base.bindings[String(position)] = { kind: 'keycode', keycode };
           }
         }
       }

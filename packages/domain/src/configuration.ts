@@ -12,6 +12,7 @@
 import { z } from 'zod';
 import { LIMITS } from './limits.ts';
 import { MOD_TAP_MODIFIERS, SOCD_DIRECTIONAL_KEYCODES, SUPPORTED_KEYCODE_NAMES } from './keycodes.ts';
+import { SOCD_POLICY_ID_TUPLE } from './socd.ts';
 
 export const SCHEMA_VERSION = 1;
 
@@ -125,17 +126,17 @@ const socdDirectionalKeycode = z
   .refine((v) => SOCD_DIRECTIONAL_KEYCODES.has(v), { message: 'not a supported SOCD direction key' });
 
 /**
- * SOCD is declared here but is NOT enabled for generation yet.
+ * SOCD configuration.
  *
- * claude.md rule 9 requires the SOCD implementation to be verified against the exact
- * APIs present in the pinned revision before exposure. Until that verification
- * happens (Phase 4), `packages/qmk-generator` rejects any configuration with
- * `socd.enabled === true`, and the capability is reported unavailable.
+ * Structural rules only. Whether the chosen directions actually *oppose* each other,
+ * and whether this keyboard has a compile-verified SOCD build, are catalog questions
+ * and live in `validateAgainstLayout` — see `socd.ts` for why both are required.
  */
 export const socdConfigurationSchema = z
   .object({
     enabled: z.boolean(),
-    policyId: z.enum(['neutral', 'last_input_priority']),
+    // Built from the published policy list so the two cannot drift apart.
+    policyId: z.enum(SOCD_POLICY_ID_TUPLE),
     directionalKeys: z
       .object({
         up: positionIdSchema,

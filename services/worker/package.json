@@ -13,9 +13,10 @@
     "@qmk-web-app/artifact-store": "workspace:*",
     "@qmk-web-app/build-queue": "workspace:*",
     "@qmk-web-app/domain": "workspace:*",
+    "@qmk-web-app/qmk-catalog": "workspace:*",
     "@qmk-web-app/qmk-generator": "workspace:*",
     "@qmk-web-app/qmk-sandbox": "workspace:*",
-    "@qmk-web-app/qmk-catalog": "workspace:*",
+    "@qmk-web-app/qmk-socd-module": "workspace:*",
     "pg": "^8.13.1"
   },
   "devDependencies": {

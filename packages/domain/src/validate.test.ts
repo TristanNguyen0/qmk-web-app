@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readCatalogSample } from '@qmk-web-app/qmk-fixtures';
 import type { Catalog } from './catalog.ts';
 import { DomainError, ERROR_CODES } from './errors.ts';
+import { SOCD_POLICIES } from './socd.ts';
 import { validateConfiguration } from './validate.ts';
 
 const catalog = readCatalogSample() as Catalog;
@@ -34,6 +35,50 @@ function config(overrides: Record<string, unknown> = {}): Record<string, unknown
     generatorVersion: '1.0.0',
     ...overrides,
   };
+}
+
+/**
+ * A configuration with SOCD enabled and consistent base-layer bindings. Overrides let
+ * a test break exactly one of those invariants at a time.
+ */
+function socdConfig(
+  overrides: {
+    keyboardId?: string;
+    layoutId?: string;
+    policyId?: string;
+    directionalKeycodes?: Record<string, string>;
+    bindings?: Record<string, unknown>;
+  } = {},
+): Record<string, unknown> {
+  const {
+    bindings = {
+      '0': { kind: 'keycode', keycode: 'KC_W' },
+      '1': { kind: 'keycode', keycode: 'KC_S' },
+      '2': { kind: 'keycode', keycode: 'KC_A' },
+      '3': { kind: 'keycode', keycode: 'KC_D' },
+    },
+    directionalKeycodes = { up: 'KC_W', down: 'KC_S', left: 'KC_A', right: 'KC_D' },
+    policyId = 'neutral',
+    ...rest
+  } = overrides;
+
+  return config({
+    ...rest,
+    layers: [
+      {
+        id: '33333333-3333-4333-8333-333333333331',
+        index: 0,
+        name: 'Base',
+        bindings,
+      },
+    ],
+    socd: {
+      enabled: true,
+      policyId,
+      directionalKeys: { up: 0, down: 1, left: 2, right: 3 },
+      directionalKeycodes,
+    },
+  });
 }
 
 function expectCode(input: unknown, code: string): void {
@@ -165,17 +210,106 @@ describe('validateConfiguration', () => {
     );
   });
 
-  it('reports SOCD as unavailable rather than silently ignoring it', () => {
+  it('accepts SOCD on a compile-verified keyboard', () => {
+    const { configuration } = validateConfiguration(socdConfig(), { catalog });
+    expect(configuration.socd?.enabled).toBe(true);
+    expect(configuration.socd?.policyId).toBe('neutral');
+  });
+
+  it('accepts every published SOCD policy', () => {
+    for (const policy of SOCD_POLICIES) {
+      const { configuration } = validateConfiguration(socdConfig({ policyId: policy.id }), {
+        catalog,
+      });
+      expect(configuration.socd?.policyId).toBe(policy.id);
+    }
+  });
+
+  it('accepts arrow keys as an opposing pair, not just WASD', () => {
+    const { configuration } = validateConfiguration(
+      socdConfig({
+        directionalKeycodes: {
+          up: 'KC_UP',
+          down: 'KC_DOWN',
+          left: 'KC_LEFT',
+          right: 'KC_RIGHT',
+        },
+        bindings: {
+          '0': { kind: 'keycode', keycode: 'KC_UP' },
+          '1': { kind: 'keycode', keycode: 'KC_DOWN' },
+          '2': { kind: 'keycode', keycode: 'KC_LEFT' },
+          '3': { kind: 'keycode', keycode: 'KC_RIGHT' },
+        },
+      }),
+      { catalog },
+    );
+    expect(configuration.socd?.directionalKeycodes.up).toBe('KC_UP');
+  });
+
+  it('refuses SOCD on a keyboard that has not been compile-verified', () => {
+    // planck/rev6 is a supported, catalogued keyboard — but catalogued is a weaker
+    // claim than known to build *with the SOCD module*.
+    expectCode(
+      socdConfig({ keyboardId: 'planck/rev6', layoutId: 'LAYOUT_ortho_4x12' }),
+      ERROR_CODES.CAPABILITY_UNAVAILABLE,
+    );
+  });
+
+  it('refuses directions that do not actually oppose each other', () => {
+    // W against Right has no pair in the module, so it would silently do nothing.
+    expectCode(
+      socdConfig({
+        directionalKeycodes: { up: 'KC_W', down: 'KC_DOWN', left: 'KC_A', right: 'KC_D' },
+        bindings: {
+          '0': { kind: 'keycode', keycode: 'KC_W' },
+          '1': { kind: 'keycode', keycode: 'KC_DOWN' },
+          '2': { kind: 'keycode', keycode: 'KC_A' },
+          '3': { kind: 'keycode', keycode: 'KC_D' },
+        },
+      }),
+      ERROR_CODES.CONFIG_INVALID,
+    );
+  });
+
+  it('refuses SOCD on a position the base layer binds to something else', () => {
+    // Otherwise the editor would show KC_J while SOCD quietly resolved it as "up".
+    expectCode(
+      socdConfig({
+        bindings: {
+          '0': { kind: 'keycode', keycode: 'KC_J' },
+          '1': { kind: 'keycode', keycode: 'KC_S' },
+          '2': { kind: 'keycode', keycode: 'KC_A' },
+          '3': { kind: 'keycode', keycode: 'KC_D' },
+        },
+      }),
+      ERROR_CODES.CONFIG_INVALID,
+    );
+  });
+
+  it('refuses SOCD on a position the base layer leaves unassigned', () => {
+    expectCode(
+      socdConfig({
+        bindings: {
+          '1': { kind: 'keycode', keycode: 'KC_S' },
+          '2': { kind: 'keycode', keycode: 'KC_A' },
+          '3': { kind: 'keycode', keycode: 'KC_D' },
+        },
+      }),
+      ERROR_CODES.CONFIG_INVALID,
+    );
+  });
+
+  it('still checks SOCD positions exist in the layout when SOCD is disabled', () => {
     expectCode(
       config({
         socd: {
-          enabled: true,
+          enabled: false,
           policyId: 'neutral',
-          directionalKeys: { up: 0, down: 1, left: 2, right: 3 },
+          directionalKeys: { up: 0, down: 1, left: 2, right: 99 },
           directionalKeycodes: { up: 'KC_W', down: 'KC_S', left: 'KC_A', right: 'KC_D' },
         },
       }),
-      ERROR_CODES.CAPABILITY_UNAVAILABLE,
+      ERROR_CODES.CONFIG_INVALID,
     );
   });
 

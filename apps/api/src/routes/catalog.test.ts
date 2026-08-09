@@ -177,11 +177,32 @@ describe('keycodes', () => {
 });
 
 describe('SOCD capabilities', () => {
-  it('honestly reports SOCD as unavailable rather than listing unverified policies', async () => {
+  it('lists the verified policies for a compile-verified keyboard', async () => {
     const { status, body } = await get('/v1/catalog/latest/socd-capabilities/crkbd/rev1');
+    expect(status).toBe(200);
+    expect(body['available']).toBe(true);
+    expect((body['policies'] as { id: string }[]).map((p) => p.id)).toEqual([
+      'neutral',
+      'last_input_priority',
+    ]);
+    expect(body['verticalPairs']).toEqual([
+      ['KC_W', 'KC_S'],
+      ['KC_UP', 'KC_DOWN'],
+    ]);
+  });
+
+  it('reports SOCD unavailable, with a reason, for a keyboard that has not been verified', async () => {
+    const { status, body } = await get('/v1/catalog/latest/socd-capabilities/planck/rev6');
     expect(status).toBe(200);
     expect(body['available']).toBe(false);
     expect(body['policies']).toEqual([]);
+    expect(body['reason']).toMatch(/compile-verified/);
+  });
+
+  it('states that SOCD compliance is the user’s responsibility', async () => {
+    // claude.md rule 10: never make a compliance claim on the user's behalf.
+    const { body } = await get('/v1/catalog/latest/socd-capabilities/crkbd/rev1');
+    expect(body['compliance']).toMatch(/no compliance claim/i);
   });
 
   it('404s for a keyboard that is not supported', async () => {

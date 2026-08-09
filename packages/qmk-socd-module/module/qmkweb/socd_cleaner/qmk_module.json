@@ -1,0 +1,24 @@
+{
+    "module_name": "SOCD Cleaner",
+    "maintainer": "qmk-web-app",
+    "license": "GPL-2.0-or-later",
+    "url": "https://github.com/TristanNguyen0/qmk-web-app",
+    "keycodes": [
+        { "key": "SOCD_NEUTRAL_W", "label": "SOCD neutral W", "aliases": ["SDN_W"] },
+        { "key": "SOCD_NEUTRAL_S", "label": "SOCD neutral S", "aliases": ["SDN_S"] },
+        { "key": "SOCD_NEUTRAL_A", "label": "SOCD neutral A", "aliases": ["SDN_A"] },
+        { "key": "SOCD_NEUTRAL_D", "label": "SOCD neutral D", "aliases": ["SDN_D"] },
+        { "key": "SOCD_NEUTRAL_UP", "label": "SOCD neutral Up", "aliases": ["SDN_UP"] },
+        { "key": "SOCD_NEUTRAL_DOWN", "label": "SOCD neutral Down", "aliases": ["SDN_DN"] },
+        { "key": "SOCD_NEUTRAL_LEFT", "label": "SOCD neutral Left", "aliases": ["SDN_LT"] },
+        { "key": "SOCD_NEUTRAL_RIGHT", "label": "SOCD neutral Right", "aliases": ["SDN_RT"] },
+        { "key": "SOCD_LAST_W", "label": "SOCD last-input W", "aliases": ["SDL_W"] },
+        { "key": "SOCD_LAST_S", "label": "SOCD last-input S", "aliases": ["SDL_S"] },
+        { "key": "SOCD_LAST_A", "label": "SOCD last-input A", "aliases": ["SDL_A"] },
+        { "key": "SOCD_LAST_D", "label": "SOCD last-input D", "aliases": ["SDL_D"] },
+        { "key": "SOCD_LAST_UP", "label": "SOCD last-input Up", "aliases": ["SDL_UP"] },
+        { "key": "SOCD_LAST_DOWN", "label": "SOCD last-input Down", "aliases": ["SDL_DN"] },
+        { "key": "SOCD_LAST_LEFT", "label": "SOCD last-input Left", "aliases": ["SDL_LT"] },
+        { "key": "SOCD_LAST_RIGHT", "label": "SOCD last-input Right", "aliases": ["SDL_RT"] }
+    ]
+}

@@ -7,7 +7,13 @@
  * The client carries no keyboard or keycode knowledge of its own — everything it
  * knows arrives in a response (claude.md § Catalog interfaces).
  */
-import type { Binding, CatalogKeyPosition, Layer, Macro } from '@qmk-web-app/domain';
+import type {
+  Binding,
+  CatalogKeyPosition,
+  Layer,
+  Macro,
+  SocdConfiguration,
+} from '@qmk-web-app/domain';
 
 export interface SupportedKeycode {
   name: string;
@@ -92,9 +98,26 @@ export interface ConfigurationResponse {
   isDraft: boolean;
   layers: Layer[];
   macros: Macro[];
-  socd: unknown;
+  socd: SocdConfiguration | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * What the server says SOCD can do for one keyboard.
+ *
+ * Mirrors `GET /v1/catalog/:version/socd-capabilities/*`. The UI renders exactly this
+ * and adds nothing to it — an empty `policies` with a `reason` is the honest answer for
+ * a keyboard that has not been compile-verified.
+ */
+export interface SocdCapabilitiesResponse {
+  keyboardId: string;
+  available: boolean;
+  reason?: string;
+  policies: { id: string; label: string; description: string }[];
+  verticalPairs: [string, string][];
+  horizontalPairs: [string, string][];
+  compliance: string;
 }
 
 export interface ConfigurationSummary {
@@ -116,7 +139,7 @@ export interface SaveConfigurationInput {
   layoutId: string;
   layers: Layer[];
   macros: Macro[];
-  socd: unknown;
+  socd: SocdConfiguration | null;
 }
 
 export async function createConfiguration(
