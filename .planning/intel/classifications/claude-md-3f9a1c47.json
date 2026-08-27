@@ -1,0 +1,31 @@
+{
+  "source_path": "/home/tristan/dev/qmk-web-app/claude.md",
+  "type": "SPEC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "QMK Firmware Customizer — Implementation Guide",
+  "summary": "Implementation guide defining product scope, boundaries, data model, generation/build workflow, isolation rules, error codes, testing strategy, and phased plan for a QMK firmware customizer.",
+  "scope": [
+    "QMK catalog discovery",
+    "pinned QMK revision",
+    "configuration model",
+    "visual keymap editor",
+    "macros",
+    "SOCD Cleaner",
+    "keymap generator",
+    "build orchestrator",
+    "build worker",
+    "build isolation",
+    "artifact service",
+    "error codes",
+    "testing strategy",
+    "community modules registry"
+  ],
+  "cross_refs": [
+    "docs/adr/0001-technology-stack.md",
+    "infra/qmk/manifest.json"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": "Mixed-signal document: MVP/out-of-scope product sections (PRD signal) plus data models, interface signatures, build workflow contracts, non-negotiable implementation rules and a stack decision table (SPEC signal). No Status frontmatter, no Decision/Consequences ADR structure; the stack decisions defer to ADR 0001. SPEC signals dominate and outrank PRD per ambiguity rule."
+}

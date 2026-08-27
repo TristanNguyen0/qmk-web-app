@@ -1,0 +1,30 @@
+{
+  "source_path": "/home/tristan/dev/qmk-web-app/docs/adr/0004-the-builds-table-is-the-queue.md",
+  "type": "ADR",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "ADR 0004 — The `builds` table is the queue, and artifacts live behind a store interface",
+  "summary": "Uses the builds table itself as the lease-based queue, puts artifacts behind an ArtifactStore interface backed by filesystem, and grants the worker a restricted database role.",
+  "scope": [
+    "builds table",
+    "build queue",
+    "lease and claim semantics",
+    "cancellation flag",
+    "idempotency key index",
+    "ArtifactStore interface",
+    "filesystem artifact backend",
+    "S3/MinIO deferral",
+    "qwa_worker database role",
+    "QueueRunner.maintain retention"
+  ],
+  "cross_refs": [
+    "0001-technology-stack.md",
+    "../../packages/domain/src/build.ts",
+    "claude.md",
+    "migrations/003_worker_role.sql",
+    "apps/api/src/builds/store-contract.test.ts"
+  ],
+  "locked": true,
+  "precedence": null,
+  "notes": ""
+}

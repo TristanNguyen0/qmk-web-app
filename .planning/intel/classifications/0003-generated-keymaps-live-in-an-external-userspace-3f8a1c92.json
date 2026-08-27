@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/tristan/dev/qmk-web-app/docs/adr/0003-generated-keymaps-live-in-an-external-userspace.md",
+  "type": "ADR",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "ADR 0003 — Generated keymaps live in an external QMK userspace, not inside the QMK tree",
+  "summary": "Generated keymaps are written to an external QMK userspace in an ephemeral workspace; the pinned QMK tree stays read-only, built via a symlink-farm working directory.",
+  "scope": ["QMK userspace", "build workspace", "read-only QMK tree mount", "symlink farm working directory", "BUILD_DIR", "firmware artifact collection", "services/worker", "packages/qmk-generator"],
+  "cross_refs": ["claude.md", "packages/qmk-generator", "services/worker"],
+  "locked": true,
+  "precedence": null,
+  "notes": ""
+}

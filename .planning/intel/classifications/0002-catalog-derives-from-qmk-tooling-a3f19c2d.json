@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/tristan/dev/qmk-web-app/docs/adr/0002-catalog-derives-from-qmk-tooling.md",
+  "type": "ADR",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "ADR 0002 — The catalog is derived by QMK's own tooling, not by a re-implemented parser",
+  "summary": "Catalog discovery uses QMK's own Python tooling for extraction, with a separate strict TypeScript normalization stage that never repairs data.",
+  "scope": ["keyboard catalog", "QMK tooling", "infra/qmk/extract/extract_catalog.py", "packages/qmk-catalog", "packages/qmk-fixtures", "pinned build image", "info.json/keyboard.json"],
+  "cross_refs": ["claude.md"],
+  "locked": true,
+  "precedence": null,
+  "notes": ""
+}

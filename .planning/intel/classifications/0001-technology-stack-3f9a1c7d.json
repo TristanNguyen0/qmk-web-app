@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/tristan/dev/qmk-web-app/docs/adr/0001-technology-stack.md",
+  "type": "ADR",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "ADR 0001 — Technology stack",
+  "summary": "Accepted decisions fixing the technology stack across language, frontend, backend, database, queue, storage, build isolation, auth, testing, observability, plus the QMK pin.",
+  "scope": ["TypeScript", "Next.js App Router", "React", "Fastify", "REST + OpenAPI", "PostgreSQL 16", "database-backed queue", "S3-compatible object storage", "MinIO", "Docker build isolation", "anonymous signed-cookie sessions", "Tailwind CSS", "Radix", "Vitest", "Playwright", "OpenTelemetry", "browser flashing", "QMK firmware pin"],
+  "cross_refs": ["claude.md", "packages/domain", "services/worker", "infra/qmk/manifest.json"],
+  "locked": true,
+  "precedence": null,
+  "notes": ""
+}

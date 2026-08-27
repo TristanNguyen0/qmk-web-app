@@ -1,0 +1,13 @@
+{
+  "source_path": "/home/tristan/dev/qmk-web-app/README.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "QMK Firmware Customizer",
+  "summary": "Project overview: phase status, local run instructions, build lifecycle, catalog format, repo layout, enforced security properties, and known gaps.",
+  "scope": ["QMK firmware customizer", "catalog", "keymap editor", "build queue", "worker", "artifact storage", "Postgres persistence", "session cookies", "SOCD"],
+  "cross_refs": ["claude.md", "docs/adr/", "docs/adr/0001-technology-stack.md", "docs/adr/0004-the-builds-table-is-the-queue.md", "packages/domain/src/limits.ts", "infra/qmk/manifest.json", "apps/api/migrations/003_worker_role.sql", "infra/deploy/docker-compose.yml"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}
