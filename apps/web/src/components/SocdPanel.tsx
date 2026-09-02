@@ -42,7 +42,7 @@ export function SocdPanel({ capabilities, socd, positions, onChange }: SocdPanel
     return (
       <section aria-labelledby={headingId} className="socd">
         <h2 id={headingId}>SOCD</h2>
-        <p className="muted">Could not load SOCD capabilities for this keyboard.</p>
+        <p className="notice">Could not load SOCD capabilities for this keyboard.</p>
       </section>
     );
   }
@@ -253,8 +253,10 @@ function SocdEditor({
                 ? activePolicy.description
                 : 'Choose a policy to see how conflicts resolve.'}{' '}
               Resolution applies to these four keys on the <strong>base layer only</strong>; on
-              other layers those positions behave normally. SOCD runs before macros, so a macro’s
-              own keypresses are never altered.
+              other layers those positions behave normally. A position assigned to SOCD is bound
+              to its SOCD keycode on the base layer, so it cannot also be a mod-tap — assigning
+              one replaces the other. SOCD runs before macros, so a macro’s own keypresses are
+              never altered.
             </p>
             {/* claude.md rule 10 — stated plainly, and not as fine print. */}
             <p>

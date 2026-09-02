@@ -199,6 +199,26 @@ describe('SOCD capabilities', () => {
     expect(body['reason']).toMatch(/compile-verified/);
   });
 
+  it('names the resolved catalog version in the unavailable reason for a supported keyboard with no registry record (D-02)', async () => {
+    const { status, body } = await get('/v1/catalog/latest/socd-capabilities/planck/rev6');
+    expect(status).toBe(200);
+    expect(body['available']).toBe(false);
+    expect(body['policies']).toEqual([]);
+    // The route passes the version it already resolved into socdCapabilitiesFor,
+    // rather than computing it and discarding it.
+    expect(body['reason']).toContain(catalog.catalogVersion);
+  });
+
+  it('returns both policies in declaration order for a compile-verified keyboard', async () => {
+    const { status, body } = await get('/v1/catalog/latest/socd-capabilities/crkbd/rev1');
+    expect(status).toBe(200);
+    expect(body['available']).toBe(true);
+    expect((body['policies'] as { id: string }[]).map((p) => p.id)).toEqual([
+      'neutral',
+      'last_input_priority',
+    ]);
+  });
+
   it('states that SOCD compliance is the user’s responsibility', async () => {
     // claude.md rule 10: never make a compliance claim on the user's behalf.
     const { body } = await get('/v1/catalog/latest/socd-capabilities/crkbd/rev1');
