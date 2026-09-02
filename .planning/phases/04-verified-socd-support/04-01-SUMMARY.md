@@ -260,3 +260,14 @@ None - no external service configuration required.
 ---
 *Phase: 04-verified-socd-support*
 *Completed: 2026-09-02*
+
+## Self-Check: PASSED
+
+- All 9 key files verified present on disk (`04-VERIFICATION.md`, `socd_cleaner.c`,
+  `qmk-socd-module/src/index.ts`, `domain/src/socd.ts`, `socd-compile-matrix.ts`,
+  `SocdPanel.tsx`, ADR 0005, this SUMMARY, `README.md`).
+- All 5 commits verified present in `git log`: `785503f`, `ebd0a25`, `799fba1`, `124082e`,
+  `e37815a`.
+- Re-ran plan-level `<verification>`: `pnpm test` (357/357 pass), `pnpm socd:matrix
+  catalogs/0.33.13-1` (2 builds, 1 keyboard, 2 policies, pass), `git worktree list` (main only),
+  `git status --porcelain` (clean).
