@@ -1,7 +1,7 @@
 ---
 phase: 4
 slug: verified-socd-support
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-09-02
@@ -52,6 +52,14 @@ side effect of this UI-SPEC.
 
 ---
 
+**Visual anchor (focal point).** The panel's focal point is the `Enable SOCD resolution` checkbox —
+it is the first control in the fieldset, it gates every other control below it, and nothing else in
+the panel competes for attention (no accent color, no icons, no pill). When SOCD is unavailable, the
+`.notice` block becomes the focal point instead, because the checkbox is not rendered at all. Do not
+introduce a competing emphasis treatment for the policy select or the position selects.
+
+---
+
 ## Spacing Scale
 
 **This phase requires zero new spacing values.** Both required UI changes (the mod-tap
@@ -68,12 +76,16 @@ not new work for this phase.
 | lg | 24px | Not used inside `SocdPanel`; reserved for section-level padding elsewhere in the app |
 | xl | 32px (2rem) | `.socd` margin-top (separation from the layer editor above it) |
 
-Exceptions (pre-existing, not multiples of 4 — inherited from shipped CSS, do **not**
-replicate in new rules, and do **not** "fix" them as part of this phase — that is an
-unrelated restyle):
-- `.socd legend` uses `0.375rem` (6px) horizontal padding.
-- `.notice` uses `0.875rem 1rem` (14px/16px) padding.
-- `.unsupported-badge` uses `0.125rem 0.5rem` (2px/8px) padding.
+The scale above (4 / 8 / 16 / 24 / 32) is the sanctioned scale. This phase adds nothing to it.
+
+> **Known legacy exceptions — NOT part of the scale, do not replicate.** Three shipped rules use
+> values that are not multiples of 4. They are recorded here so a future reader does not mistake
+> them for sanctioned steps. Do not copy them into new rules, and do not "fix" them in this phase —
+> that is an unrelated restyle outside this phase's boundary.
+>
+> - `.socd legend` — `0.375rem` (6px) horizontal padding
+> - `.notice` — `0.875rem 1rem` (14px/16px) padding
+> - `.unsupported-badge` — `0.125rem 0.5rem` (2px/8px) padding
 
 ---
 
@@ -165,22 +177,51 @@ inside the existing `.notice` block.
 
 ## UI Considerations
 
-> Two elements cover this phase's UI surface. `SocdPanel.tsx` (worktree @ `683270f`) is the
-> single component in scope; states are resolved against its existing code plus the two
-> required changes above.
+> Shape-rooted state coverage for this phase's UI surface, produced by the ui-consideration probe
+> (`ui-consideration-probe.cjs`) at ui-phase step 9.5 and resolved interactively. Two elements are in
+> scope: **E1** the SOCD config form (the fieldset in `SocdPanel.tsx`: enable checkbox, verified-policy
+> select, directional-pair picker, four directional position selects) and **E2** the SOCD capability
+> status copy (the "What this does" notice, the capabilities load-failure message, and the
+> `CAPABILITY_UNAVAILABLE` reason string).
+>
+> Element kinds for E1 were authored as `form, interactive-control, static-content, list-collection`.
+> The `list-collection` kind was added at the propose-then-confirm step because the verified-policy
+> option set is variable-length and can legitimately be empty — the prose classifier missed it, and it
+> is what raises the `populated` and `zero-one-many` rows below.
+>
+> Empty-state and error-state **copy** stays in `## Copywriting Contract`; this section covers state
+> coverage and references those rows rather than restating them.
 
-Applicable state considerations resolved: 6 covered, 2 backstop, 0 unresolved.
+**Coverage:** 10 applicable · 10 resolved · 0 unresolved — 2 explicit, 2 backstop, 6 dismissed.
 
-| Category | Element(s) | Status | Resolution / Reason |
-|----------|------------|--------|---------------------|
-| empty | SOCD config form (policy/pair/position controls) | ✅ covered | Dismissed — not applicable: every catalog-valid layout has ≥1 position (a Phase 1 catalog invariant), so the four directional-position `<select>`s can never render with zero options for a keyboard that reaches this panel. |
-| loading | SOCD config form | ✅ covered | Dismissed — capabilities/positions arrive as props from a server-side fetch that completes before the panel renders, the same pattern as `keycodes`/`positions` elsewhere in `KeymapEditorProps`; no client-side loading state applies. |
-| error | SOCD config form (submit/save path) | 🧪 backstop | Server-side `validate.ts` (lines 118–176, worktree) rejects an invalid SOCD selection (bad pair, wrong base-layer binding, position outside the layout) with `CONFIG_INVALID` and field-level errors, surfaced through `KeymapEditor`'s existing `save.status === 'invalid'` → `fieldErrors` rendering path. Lifts as backstop: no test yet asserts a SOCD-specific field error renders distinctly inside `SocdPanel` itself (only that `validate.ts` throws) — the planner should add that assertion. |
-| error | SOCD capability status (load-failure / `CAPABILITY_UNAVAILABLE` notices) | ✅ covered | See "Copywriting Contract" rows above — both states have prescribed, cited copy and class treatment. |
-| partial | SOCD config form (fewer than 4 distinct positions assigned) | 🧪 backstop | Structurally prevented: reusing one position for two directions would require that position's base-layer binding to equal two different expected SOCD keycodes simultaneously, which `validate.ts`'s per-direction check cannot satisfy — but no test explicitly names this "duplicate position across two directions" case. Lifts as backstop pending that test. |
-| overflow | SOCD capability status (`reason` string length) | ✅ covered | Dismissed — `.notice` is a block element with default text wrapping and no `max-height`/`overflow`/`nowrap` styling in `globals.css`; long reason text (including the catalog-version-aware string prescribed above) wraps normally with no truncation risk. |
-| zero-one-many | — | ✅ covered | Not applicable — no list/collection element exists in this feature's UI surface. |
-| long-text | SOCD config form (policy descriptions, pair labels) + SOCD capability status (reason string) | ✅ covered | Dismissed — all product copy here is short, fixed strings (policy descriptions ≤ ~60 chars in `SOCD_POLICIES`; reason strings ≤ ~180 chars); both wrap normally inside `<p>`/`.notice`, no truncation or ellipsis handling is needed. |
+| Element | Category | Status | Resolution / Reason |
+|---------|----------|--------|---------------------|
+| E1 | empty | ✅ resolved (explicit) | When the verified-policy list for `(catalogVersion, keyboardId)` is empty on an otherwise SOCD-capable keyboard, `SocdPanel` renders the `CAPABILITY_UNAVAILABLE` `.notice` with its reason string; it never renders a policy `<select>` with zero options. |
+| E1 | loading | ⊘ dismissed | No client-side loading state exists: capabilities, positions and keycodes arrive as props from a server-side fetch that completes before `SocdPanel` renders, the same shape as the rest of `KeymapEditorProps`. |
+| E1 | error | 🧪 resolved (backstop) | An invalid SOCD selection (bad directional pair, wrong base-layer binding, position outside the layout) is rejected server-side by `validate.ts` with `CONFIG_INVALID` and field-level errors, surfaced through `KeymapEditor`'s `save.status === 'invalid'` → `fieldErrors` path. **Backstop:** no test yet asserts a SOCD-specific field error renders inside `SocdPanel` itself. |
+| E1 | populated | ⊘ dismissed | The happy path renders exactly the registry-verified policy set returned by `listSocdCapabilities`; there is no volume-dependent layout concern, and the correctness of that set is covered by the `empty` and `zero-one-many` rows plus `REQ-socd-policy-choices` cl.1. |
+| E1 | partial | 🧪 resolved (backstop) | Assigning one position to two directions is structurally impossible: `validate.ts` checks each direction's base-layer binding against that direction's expected SOCD keycode, and one position cannot equal two different keycodes. **Backstop:** no test explicitly names the duplicate-position-across-two-directions case. |
+| E1 | overflow | ⊘ dismissed | No container can be exceeded: the panel's controls sit in a block-flow fieldset and `globals.css` declares no `max-height`, `overflow` or `white-space: nowrap` on `.socd`, `.socd fieldset` or `.notice`. |
+| E1 | zero-one-many | ✅ resolved (explicit) | Zero verified policies routes to the `CAPABILITY_UNAVAILABLE` notice (see the `empty` row). Exactly one verified policy still renders the policy `<select>` as a select with a single option — never auto-selected and hidden — so "pick a policy from the verified list" stays literally true per success criterion 1. Many renders the same flat `<select>` with no grouping, pagination or truncation. |
+| E1 | long-text | ⊘ dismissed | All copy in the form is short fixed strings (`SOCD_POLICIES` descriptions run to roughly 60 characters) rendered in wrapping block elements; no truncation or ellipsis handling applies. |
+| E2 | overflow | ⊘ dismissed | `.notice` is a block element with default wrapping and no `max-height`, `overflow` or `nowrap` styling in `globals.css`, so long reason text wraps rather than clipping. |
+| E2 | long-text | ⊘ dismissed | The longest string on this surface is the catalog-version-aware `CAPABILITY_UNAVAILABLE` reason at roughly 180 characters, which wraps normally inside `.notice`; no truncation or ellipsis handling is needed. |
+
+### Lift into `must_haves` (plan-phase)
+
+The planner MUST represent every resolved row below in a plan's `must_haves`. Explicit rows lift as
+plain truth strings; backstop rows lift as flat-scalar markers (never a parenthetical — the verifier
+branches on the `verification:` field). Dismissed rows do not lift.
+
+```yaml
+truths:
+  - An empty verified-policy list for a SOCD-capable keyboard renders the CAPABILITY_UNAVAILABLE notice with its reason, never a zero-option policy select.
+  - The policy select always renders as a select — one verified policy yields a one-option select, never an auto-selected hidden control.
+  - statement: A SOCD-specific CONFIG_INVALID field error renders inside SocdPanel on an invalid selection.
+    verification: backstop
+  - statement: Assigning one position to two directions is rejected, with a test naming the duplicate-position case.
+    verification: backstop
+```
 
 ---
 
@@ -198,11 +239,13 @@ phase.
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: FLAG → addressed (visual anchor declared above the Spacing Scale)
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: FLAG → addressed (legacy exceptions moved out of the scale into a "do not replicate" note)
+- [x] Dimension 6 Registry Safety: PASS
+- [x] UI-consideration probe: 10/10 resolved, 0 unresolved
 
-**Approval:** pending
+**Approval:** approved 2026-09-02 (gsd-ui-checker — APPROVED, no blocking issues; both FLAGs
+subsequently closed at step 9.5 write-back)
