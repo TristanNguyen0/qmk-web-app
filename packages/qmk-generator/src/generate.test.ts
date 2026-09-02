@@ -45,6 +45,38 @@ function generate(configuration: Configuration, buildId = BUILD_ID) {
   return generateKeymap({ configuration, keyboard, buildId });
 }
 
+/** A SOCD-enabled configuration whose base layer already binds the four directions. */
+function socdConfig(overrides: Partial<Configuration> = {}): Configuration {
+  return config({
+    layers: [
+      {
+        id: '33333333-3333-4333-8333-333333333331',
+        index: 0,
+        name: 'Base',
+        bindings: {
+          '0': { kind: 'keycode', keycode: 'KC_W' },
+          '1': { kind: 'keycode', keycode: 'KC_S' },
+          '2': { kind: 'keycode', keycode: 'KC_A' },
+          '3': { kind: 'keycode', keycode: 'KC_D' },
+        },
+      },
+      {
+        id: '33333333-3333-4333-8333-333333333332',
+        index: 1,
+        name: 'Raise',
+        bindings: { '0': { kind: 'keycode', keycode: 'KC_1' } },
+      },
+    ],
+    socd: {
+      enabled: true,
+      policyId: 'neutral',
+      directionalKeys: { up: 0, down: 1, left: 2, right: 3 },
+      directionalKeycodes: { up: 'KC_W', down: 'KC_S', left: 'KC_A', right: 'KC_D' },
+    },
+    ...overrides,
+  } as Partial<Configuration>);
+}
+
 function keymapJson(result: ReturnType<typeof generate>): Record<string, unknown> {
   const file = result.files.find((f) => f.path.endsWith('keymap.json'))!;
   return JSON.parse(file.contents);
@@ -189,6 +221,73 @@ describe('macros', () => {
   });
 });
 
+describe('SOCD', () => {
+  it('emits no module reference when SOCD is off', () => {
+    const json = keymapJson(generate(config()));
+    expect(json['modules']).toBeUndefined();
+    expect(generate(config()).requiresSocdModule).toBe(false);
+  });
+
+  it('references the SOCD community module when SOCD is on', () => {
+    const result = generate(socdConfig());
+    expect(keymapJson(result)['modules']).toEqual(['qmkweb/socd_cleaner']);
+    expect(result.requiresSocdModule).toBe(true);
+  });
+
+  it('still emits only qmk.json and keymap.json — SOCD adds no generated C', () => {
+    const files = generate(socdConfig()).files.map((f) => f.path.split('/').at(-1));
+    expect(new Set(files)).toEqual(new Set(['qmk.json', 'keymap.json']));
+  });
+
+  it('replaces the base-layer directional bindings with module keycodes', () => {
+    const layers = keymapJson(generate(socdConfig()))['layers'] as string[][];
+    expect(layers[0]!.slice(0, 4)).toEqual([
+      'SOCD_NEUTRAL_W',
+      'SOCD_NEUTRAL_S',
+      'SOCD_NEUTRAL_A',
+      'SOCD_NEUTRAL_D',
+    ]);
+  });
+
+  it('selects the module keycodes for the chosen policy', () => {
+    const layers = keymapJson(
+      generate(
+        socdConfig({
+          socd: {
+            enabled: true,
+            policyId: 'last_input_priority',
+            directionalKeys: { up: 0, down: 1, left: 2, right: 3 },
+            directionalKeycodes: { up: 'KC_W', down: 'KC_S', left: 'KC_A', right: 'KC_D' },
+          },
+        } as Partial<Configuration>),
+      ),
+    )['layers'] as string[][];
+    expect(layers[0]!.slice(0, 4)).toEqual([
+      'SOCD_LAST_W',
+      'SOCD_LAST_S',
+      'SOCD_LAST_A',
+      'SOCD_LAST_D',
+    ]);
+  });
+
+  it('leaves layers above the base untouched', () => {
+    // A directional position may be something else entirely on a raised layer, and
+    // SOCD must not reach across layers and rewrite it.
+    const layers = keymapJson(generate(socdConfig()))['layers'] as string[][];
+    expect(layers[1]![0]).toBe('KC_1');
+    expect(layers[1]!.slice(1, 4)).toEqual(['KC_TRANSPARENT', 'KC_TRANSPARENT', 'KC_TRANSPARENT']);
+  });
+
+  it('leaves every non-directional position alone', () => {
+    const withSocd = keymapJson(generate(socdConfig()))['layers'] as string[][];
+    expect(withSocd[0]!.slice(4)).toEqual(Array(layout.positions.length - 4).fill('KC_NO'));
+  });
+
+  it('is deterministic', () => {
+    expect(generate(socdConfig()).files).toEqual(generate(socdConfig()).files);
+  });
+});
+
 describe('refusals', () => {
   it('refuses to emit a keycode outside the allowlist even if it reached generation', () => {
     const bad = config({
@@ -204,16 +303,21 @@ describe('refusals', () => {
     expect(() => generate(bad)).toThrow(GenerationError);
   });
 
-  it('refuses to generate SOCD until it is verified for the pinned revision', () => {
-    const withSocd = config({
-      socd: {
-        enabled: true,
-        policyId: 'neutral',
-        directionalKeys: { up: 0, down: 1, left: 2, right: 3 },
-        directionalKeycodes: { up: 'KC_W', down: 'KC_S', left: 'KC_A', right: 'KC_D' },
-      },
-    } as Partial<Configuration>);
-    expect(() => generate(withSocd)).toThrow(/SOCD/);
+  it('refuses SOCD for a keyboard that has not been compile-verified', () => {
+    // Generation re-checks rather than trusting that validation ran first.
+    const planck = catalog.keyboards.find(
+      (k): k is SupportedCatalogKeyboard => k.supported && k.keyboardId === 'planck/rev6',
+    )!;
+    expect(() =>
+      generateKeymap({
+        configuration: socdConfig({
+          keyboardId: 'planck/rev6',
+          layoutId: 'LAYOUT_ortho_4x12',
+        } as Partial<Configuration>),
+        keyboard: planck,
+        buildId: BUILD_ID,
+      }),
+    ).toThrow(/compile-verified/);
   });
 
   it('refuses when the configuration and catalog record disagree', () => {

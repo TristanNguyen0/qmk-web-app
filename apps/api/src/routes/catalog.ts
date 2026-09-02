@@ -15,6 +15,7 @@ import {
   ERROR_CODES,
   SUPPORTED_KEYCODES,
   isValidKeyboardIdShape,
+  socdCapabilitiesFor,
   type SupportedCatalogKeyboard,
 } from '@qmk-web-app/domain';
 import { CatalogNotFoundError, MAX_PAGE_SIZE, type CatalogStore } from '../catalog-store.ts';
@@ -168,16 +169,20 @@ export function registerCatalogRoutes(app: FastifyInstance, store: CatalogStore)
         return sendNotFound(reply, 'no such supported keyboard in this catalog version');
       }
 
-      // claude.md rule 9: SOCD must be verified against the pinned revision before it
-      // is offered. It has not been, so the honest answer is "no policies", not an
-      // optimistic list. See docs/adr and the Phase 4 plan.
+      // claude.md rule 9: only what has actually been verified is offered. A keyboard
+      // that has not been through the SOCD compile matrix gets an empty policy list
+      // and a reason, never an optimistic one (see packages/domain/src/socd.ts).
+      const capabilities = socdCapabilitiesFor(keyboardId);
       return reply.send({
         apiVersion: API_VERSION,
         catalogVersion: version,
         keyboardId,
-        available: false,
-        reason: 'SOCD support has not been verified for this QMK revision',
-        policies: [],
+        ...capabilities,
+        // claude.md rule 10: SOCD behaviour and any tournament rules around it are the
+        // user's responsibility. The product states what the firmware does and makes
+        // no compliance claim on their behalf.
+        compliance:
+          'You are responsible for whether SOCD resolution is permitted wherever you use this keyboard. This product makes no compliance claim.',
       });
     },
   );

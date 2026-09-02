@@ -19,7 +19,8 @@ function result(files: { path: string; contents: string }[]) {
     files,
     keymapName: 'qwa_deadbeef',
     compileTarget: { keyboard: 'crkbd/rev1', keymap: 'qwa_deadbeef' },
-    generatorVersion: '1.0.0',
+    requiresSocdModule: false,
+    generatorVersion: '1.1.0',
     totalBytes: files.reduce((n, f) => n + f.contents.length, 0),
   };
 }

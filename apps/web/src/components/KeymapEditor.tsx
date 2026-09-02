@@ -28,16 +28,20 @@ import {
   updateConfiguration,
   type ConfigurationResponse,
   type FieldError,
+  type SocdCapabilitiesResponse,
   type SupportedKeycode,
 } from '../lib/client.ts';
 import { BindingPicker } from './BindingPicker.tsx';
 import { BuildPanel } from './BuildPanel.tsx';
 import { MacroEditor } from './MacroEditor.tsx';
+import { SocdPanel } from './SocdPanel.tsx';
 
 export interface KeymapEditorProps {
   configuration: ConfigurationResponse;
   positions: CatalogKeyPosition[];
   keycodes: SupportedKeycode[];
+  /** Null when the capability lookup failed; the panel says so rather than guessing. */
+  socdCapabilities: SocdCapabilitiesResponse | null;
 }
 
 type SaveState =
@@ -48,7 +52,12 @@ type SaveState =
   | { status: 'conflict'; message: string }
   | { status: 'error'; message: string };
 
-export function KeymapEditor({ configuration, positions, keycodes }: KeymapEditorProps) {
+export function KeymapEditor({
+  configuration,
+  positions,
+  keycodes,
+  socdCapabilities,
+}: KeymapEditorProps) {
   const [state, dispatch] = useReducer(
     editorReducer,
     createEditorState(
@@ -56,6 +65,7 @@ export function KeymapEditor({ configuration, positions, keycodes }: KeymapEdito
         name: configuration.name,
         layers: configuration.layers,
         macros: configuration.macros,
+        socd: configuration.socd,
       },
       configuration.revision,
     ),
@@ -81,7 +91,7 @@ export function KeymapEditor({ configuration, positions, keycodes }: KeymapEdito
         layoutId: configuration.layoutId,
         layers: state.document.layers,
         macros: state.document.macros,
-        socd: null,
+        socd: state.document.socd,
       });
       revisionRef.current = updated.revision;
       setIsDraft(updated.isDraft);
@@ -344,6 +354,13 @@ export function KeymapEditor({ configuration, positions, keycodes }: KeymapEdito
         onAdd={(macro: Macro) => dispatch({ type: 'add_macro', macro })}
         onUpdate={(macro: Macro) => dispatch({ type: 'update_macro', macro })}
         onRemove={(macroId: string) => dispatch({ type: 'remove_macro', macroId })}
+      />
+
+      <SocdPanel
+        capabilities={socdCapabilities}
+        socd={state.document.socd}
+        positions={positions.map((p) => p.index)}
+        onChange={(socd) => dispatch({ type: 'set_socd', socd })}
       />
 
       <BuildPanel

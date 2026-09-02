@@ -13,6 +13,11 @@ import { z } from 'zod';
 import type { Catalog, SupportedCatalogKeyboard } from './catalog.ts';
 import { configurationSchema, type Configuration } from './configuration.ts';
 import { DomainError, ERROR_CODES, type FieldError } from './errors.ts';
+import {
+  SOCD_HORIZONTAL_PAIRS,
+  SOCD_VERIFIED_KEYBOARDS,
+  SOCD_VERTICAL_PAIRS,
+} from './socd.ts';
 
 export interface ValidationContext {
   catalog: Catalog;
@@ -111,21 +116,63 @@ export function validateConfiguration(
   });
 
   if (configuration.socd) {
-    // SOCD is schema-valid but not yet generatable; see claude.md rule 9 and the note
-    // in configuration.ts. Reject enabling it rather than silently ignoring the flag.
-    if (configuration.socd.enabled) {
-      throw new DomainError(
-        ERROR_CODES.CAPABILITY_UNAVAILABLE,
-        'SOCD support is not yet verified for this QMK revision and cannot be enabled',
-        [{ path: 'socd.enabled', message: 'unavailable in this catalog version' }],
-      );
-    }
-    for (const [direction, position] of Object.entries(configuration.socd.directionalKeys)) {
+    const socd = configuration.socd;
+
+    for (const [direction, position] of Object.entries(socd.directionalKeys)) {
       if (!validPositions.has(position)) {
         fieldErrors.push({
           path: `socd.directionalKeys.${direction}`,
           message: `position ${position} does not exist in layout ${layout.name}`,
         });
+      }
+    }
+
+    if (socd.enabled) {
+      // Compile-verified keyboards only (claude.md § SOCD Cleaner requirement 2:
+      // "Expose SOCD only for keyboards/builds that meet its verified prerequisites").
+      // This is a capability answer, not a validation failure, so it is raised
+      // immediately rather than collected with the field errors.
+      if (!SOCD_VERIFIED_KEYBOARDS.has(configuration.keyboardId)) {
+        throw new DomainError(
+          ERROR_CODES.CAPABILITY_UNAVAILABLE,
+          'SOCD has not been compile-verified for this keyboard',
+          [{ path: 'socd.enabled', message: 'unavailable for this keyboard' }],
+        );
+      }
+
+      // The module resolves fixed opposing pairs, so a configuration pairing, say, W
+      // against Right has no implementation and must be rejected rather than generated
+      // into something that silently does nothing.
+      const { up, down, left, right } = socd.directionalKeycodes;
+      const verticalOk = SOCD_VERTICAL_PAIRS.some(([a, b]) => a === up && b === down);
+      const horizontalOk = SOCD_HORIZONTAL_PAIRS.some(([a, b]) => a === left && b === right);
+      if (!verticalOk) {
+        fieldErrors.push({
+          path: 'socd.directionalKeycodes',
+          message: `${up} and ${down} are not an opposing vertical pair; expected one of ${SOCD_VERTICAL_PAIRS.map((p) => p.join('/')).join(', ')}`,
+        });
+      }
+      if (!horizontalOk) {
+        fieldErrors.push({
+          path: 'socd.directionalKeycodes',
+          message: `${left} and ${right} are not an opposing horizontal pair; expected one of ${SOCD_HORIZONTAL_PAIRS.map((p) => p.join('/')).join(', ')}`,
+        });
+      }
+
+      // SOCD replaces the base-layer binding at each directional position, so the
+      // editor must already show that keycode there. Requiring the configuration to
+      // agree keeps the rendered keymap honest: what a user sees on the base layer is
+      // what SOCD will resolve (claude.md § SOCD Cleaner requirement 5).
+      const baseLayer = configuration.layers.find((l) => l.index === 0);
+      for (const [direction, position] of Object.entries(socd.directionalKeys)) {
+        const expected = socd.directionalKeycodes[direction as keyof typeof socd.directionalKeycodes];
+        const binding = baseLayer?.bindings[String(position)];
+        if (!binding || binding.kind !== 'keycode' || binding.keycode !== expected) {
+          fieldErrors.push({
+            path: `socd.directionalKeys.${direction}`,
+            message: `position ${position} must be bound to ${expected} on the base layer for SOCD to apply to it`,
+          });
+        }
       }
     }
   }

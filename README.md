@@ -7,8 +7,8 @@ Architectural decisions live in [`docs/adr/`](docs/adr/).
 
 ## Status
 
-Phases 0 through 3 are complete: a user can select a keyboard, edit a keymap, request a build, and
-download compiled firmware.
+Phases 0 through 4 are complete: a user can select a keyboard, edit a keymap, configure verified
+SOCD behaviour, request a build, and download compiled firmware.
 
 | Phase | State |
 | --- | --- |
@@ -16,7 +16,7 @@ download compiled firmware.
 | 1 — catalog and read-only UI | **Done.** 3,748 keyboards published, read API, visual layout renderer, unsupported-state UX |
 | 2 — saved visual configurations | **Done.** Postgres persistence, revisions, anonymous sessions, layer editor, structured macros, undo/redo, autosave |
 | 3 — generation and server builds | **Done.** Queue, isolated worker, artifact storage, build API, quotas, retention, download from the editor |
-| 4 — verified SOCD support | Not started. Schema exists; validation and generation deliberately refuse it |
+| 4 — verified SOCD support | **Done.** First-party community module ([ADR 0005](docs/adr/0005-socd-is-a-first-party-community-module.md)), two policies, host-run behavioural tests, real compile matrix |
 | 5–6 — hardening, flashing | Not started |
 
 ## What works today
@@ -60,6 +60,9 @@ byte-identical.
   owner, so accounts later change only where the owner id comes from.
 - Saves use `If-Match`; a concurrent edit produces a visible conflict rather than a silent
   overwrite.
+- **SOCD**: on a compile-verified keyboard, enable SOCD resolution, choose a policy, and pick the
+  four directional keys. On every other keyboard the panel says *why* it is unavailable instead of
+  hiding. Compliance is stated as your responsibility; the product makes no claim.
 - **Build and download**: request a build, watch it progress, cancel it, download the firmware with
   its SHA-256, or read the sanitized compiler log when it fails. A build compiles a *stored
   revision*, so the button is disabled until your edits have been saved.
@@ -84,6 +87,41 @@ Quotas and retention live in `BUILD_LIMITS` (`packages/domain/src/limits.ts`): 2
 and 20 per hour per session, a 2-minute lease, 3 attempts, and 7-day artifact and log retention.
 `QueueRunner.maintain()` reclaims leases from dead workers and deletes expired objects.
 
+### SOCD
+
+The pinned QMK revision has **no SOCD implementation in core** — that was checked, not assumed, and
+the only reference in the tree is a changelog line pointing at a third-party repository. So SOCD
+ships as a first-party community module, `qmkweb/socd_cleaner`
+([ADR 0005](docs/adr/0005-socd-is-a-first-party-community-module.md)).
+
+The design keeps phase 3's strongest property: **the generator still emits no C**. A user's policy
+choice is encoded in the *keycode*, so it travels as JSON:
+
+```jsonc
+{
+  "modules": ["qmkweb/socd_cleaner"],
+  "layers": [["SOCD_NEUTRAL_W", "SOCD_NEUTRAL_S", "SOCD_NEUTRAL_A", "SOCD_NEUTRAL_D", "..."]]
+}
+```
+
+| Policy | Holding both directions sends |
+| --- | --- |
+| `neutral` | neither, until one is released |
+| `last_input_priority` | the one pressed most recently |
+
+Resolution applies to the four directional keys on the **base layer only**; those positions behave
+normally on other layers. Because QMK runs `process_record_modules` before `process_record_user`,
+SOCD resolves before macros, and a macro's own keypresses are never altered.
+
+Three things have to agree for this to be safe — the module manifest, the C dispatch, and the
+generator's keycode table — so tests cross-check all three against each other. The resolution logic
+itself lives in a header that includes nothing but `stdbool.h`/`stdint.h`, which means `pnpm test`
+compiles it with `-Wall -Wextra -Werror` and runs 2,070 behavioural assertions against the exact
+code the firmware runs.
+
+Compliance with any tournament or game rule is stated as the user's responsibility. The product
+does not make that claim on anyone's behalf.
+
 ### Catalog format
 
 A published catalog is a directory, not one file:
@@ -102,7 +140,8 @@ a request.
 
 ```bash
 pnpm typecheck
-pnpm test          # 302 tests, no Docker required
+pnpm test          # 357 tests, no Docker required
+pnpm socd:matrix catalogs/0.33.13-1   # real SOCD compiles; needs Docker + the pinned tree
 ```
 
 `pnpm test` runs the Postgres half of the repository contract suites too, when a database is
@@ -130,6 +169,8 @@ packages/
   qmk-catalog/     normalizes extractor output into an immutable, versioned catalog
   qmk-generator/   deterministic keymap generation (JSON only — no C, no Make)
   qmk-sandbox/     the BuildSandbox contract and its hardened Docker implementation
+  qmk-socd-module/ the first-party SOCD Cleaner QMK community module (static C) and the
+                   digest-verified code that places it in a build workspace
   build-queue/     BuildRepository + BuildQueue contracts, in-memory and Postgres stores
   artifact-store/  ArtifactStore contract, key derivation, filesystem and in-memory stores
   qmk-fixtures/    small fixtures captured from real extractions of the pinned tree
@@ -149,7 +190,11 @@ Each is verified by a test or by the smoke build, not just intended:
 - Builds run with `--network=none`, `--read-only`, `--cap-drop=ALL`, `no-new-privileges`, an
   unprivileged user, and CPU/memory/pid/wall-clock caps.
 - No shell evaluation anywhere; every command is an argument vector.
-- Generation emits **only** `qmk.json` and `keymap.json`. C, Make, and headers are refused.
+- Generation emits **only** `qmk.json` and `keymap.json`. C, Make, and headers are refused —
+  including for SOCD, whose configuration travels as keycodes rather than generated defines
+  ([ADR 0005](docs/adr/0005-socd-is-a-first-party-community-module.md)).
+- The SOCD module's C is verified against SHA-256 digests pinned at review time before it is
+  copied into a workspace; an unreviewed edit fails the build.
 - Keyboard ids are rejected unless they match the catalog, so user text never becomes a path.
 - The generated keymap directory name is derived from the build id, never from a user name.
 - Generated writes are contained: traversal, NULs, absolute paths, and symlinked path components
@@ -180,8 +225,12 @@ Each is verified by a test or by the smoke build, not just intended:
 
 ## Known gaps
 
-- **SOCD is not implemented.** The schema models it, and both validation and generation refuse to
-  enable it, per `claude.md` rule 9 — the pinned revision's SOCD interface has not been verified yet.
+- **SOCD is enabled for exactly one keyboard.** `crkbd/rev1` is the only entry in
+  `SOCD_VERIFIED_KEYBOARDS`, because it is the only one put through `pnpm socd:matrix`. Every other
+  keyboard reports SOCD unavailable, with a reason. Widening that list means running the matrix, not
+  editing the set.
+- SOCD offers fixed opposing pairs (`W/S`, `A/D`, `UP/DOWN`, `LEFT/RIGHT`) and two policies.
+  Arbitrary key pairs and per-pair policies are not offered.
 - Only `crkbd/rev1` has been through a real compile; the curated smoke matrix does not exist yet.
   3,743 keyboards are *catalogued*, which is a weaker claim than *known to build*.
 - No real authentication: sessions are anonymous cookies, so clearing cookies loses your work.
