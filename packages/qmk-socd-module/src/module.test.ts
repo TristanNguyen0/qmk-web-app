@@ -13,14 +13,21 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  SOCD_MODULE_DIGESTS,
   SOCD_MODULE_FILES,
   SOCD_MODULE_ID,
+  SOCD_MODULE_VERSION,
   SocdModuleError,
   materializeSocdModule,
   readSocdModuleFiles,
   verifySocdModuleIntegrity,
 } from './index.ts';
-import { SOCD_HORIZONTAL_PAIRS, SOCD_MODULE_KEYCODES, SOCD_VERTICAL_PAIRS } from '@qmk-web-app/domain';
+import {
+  MODULE_REGISTRY,
+  SOCD_HORIZONTAL_PAIRS,
+  SOCD_MODULE_KEYCODES,
+  SOCD_VERTICAL_PAIRS,
+} from '@qmk-web-app/domain';
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const moduleDir = join(packageRoot, 'module', 'qmkweb', 'socd_cleaner');
@@ -146,5 +153,30 @@ describe('integrity failures are loud', () => {
       writeFileSync(join(moduleDir, 'socd_cleaner.c'), original);
     }
     expect(() => verifySocdModuleIntegrity()).not.toThrow();
+  });
+});
+
+describe('the curated module registry agrees with this package', () => {
+  // MODULE_REGISTRY (packages/domain) cannot import this package — that would be a
+  // dependency cycle, since this package already depends on domain — so it carries a
+  // hand-pinned copy of these facts instead. This is the one place both packages can
+  // be imported together, so this is where drift between the two gets caught.
+  const manifest = JSON.parse(readFileSync(join(moduleDir, 'qmk_module.json'), 'utf8')) as {
+    license: string;
+  };
+  const registryEntry = MODULE_REGISTRY['qmkweb/socd_cleaner'];
+
+  it('pins the same module version this package publishes', () => {
+    expect(registryEntry.sourceRevision.moduleVersion).toBe(SOCD_MODULE_VERSION);
+  });
+
+  it('pins the same license qmk_module.json declares', () => {
+    expect(registryEntry.license).toBe(manifest.license);
+  });
+
+  it('pins the same digested file set the digest manifest covers', () => {
+    expect(new Set(registryEntry.sourceRevision.digestedFiles)).toEqual(
+      new Set(Object.keys(SOCD_MODULE_DIGESTS)),
+    );
   });
 });

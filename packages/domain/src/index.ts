@@ -2,6 +2,7 @@ export * from './limits.ts';
 export * from './identifiers.ts';
 export * from './keycodes.ts';
 export * from './socd.ts';
+export * from './module-registry.ts';
 export * from './configuration.ts';
 export * from './catalog.ts';
 export * from './build.ts';
