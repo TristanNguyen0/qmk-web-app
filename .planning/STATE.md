@@ -1,12 +1,19 @@
 ---
-gsd_state_version: '1.0'
+gsd_state_version: 1.0
+current_phase: 4
+current_phase_name: Verified SOCD Support
 status: planning
+stopped_at: Phase 4 context gathered
+last_updated: "2026-09-02T14:17:58.618Z"
+last_activity: 2026-08-27
+last_activity_desc: Document ingest complete; PROJECT.md, REQUIREMENTS.md, ROADMAP.md created
+state_head: ce29e6967becd83671dca4f1627520427e291542
 progress:
-  total_phases: 7
-  completed_phases: 4
+  total_phases: 6
+  completed_phases: 0
   total_plans: 0
   completed_plans: 0
-  percent: 57
+  percent: 0
 ---
 
 # Project State
@@ -50,12 +57,15 @@ No GSD-tracked executions yet — Phases 0–3 predate this planning directory.
 - **ADR 0003**: `/qmk` is read-only with no exceptions; the generated-file allowlist is
   `keymap.json`, `rules.mk`, `config.h`, `keymap.c`; builds run from the `/workspace/qmkroot`
   symlink farm; the artifact comes from exactly one predetermined path.
+
 - **ADR 0004 (artifact-store)**: filesystem-backed `ArtifactStore`; downloads stream through the API;
   **S3/MinIO and signed URLs are deliberately deferred** — do not schedule them. Revisit trigger:
   when the API and the worker no longer share a filesystem.
+
 - **ADR-0001-testing**: fixture compilations run in the real isolated build image, not a mock.
 - **ADR-0001-qmk-pin**: `0.33.13` / `332fa30e…`. A bump is a new catalog version and a new build
   image, never an in-place mutation.
+
 - **ADR-0001-browser-flashing**: deferred to Phase 6, undecided. No flashing claim ships before
   verified detection.
 
@@ -69,14 +79,18 @@ None yet.
   actual SOCD headers, enablement requirements, API, and examples first. `socd_cleaner_process` from
   the original brief is illustrative only. If the facility is absent or changed at `0.33.13`, the
   correct outcome is a recorded unavailability for this catalog version, not guessed code.
+
 - **[Phase 4] The generator must grow past JSON.** It currently emits `qmk.json` and `keymap.json`
   only and refuses C and Make. SOCD needs feature flags, configuration definitions, includes, and
   callbacks. This is in-scope under ADR 0003's existing allowlist — resolved at the ingest gate, not
   an open question.
+
 - **[Phase 4] One `process_record_user` dispatcher.** Macros and SOCD both want it. Do not append a
   second callback.
+
 - **[Phase 5] No curated smoke matrix exists.** Only `crkbd/rev1` has ever really compiled. 3,743
   keyboards are *catalogued*, which is a weaker claim than *known to build*.
+
 - **[Phase 5] No global build concurrency limit or IP rate limiting** — only per-session quotas.
 - **[Ongoing] Anonymous sessions only.** Clearing cookies loses a user's work. The identity model
   decision is Phase 5.
@@ -92,9 +106,9 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-27
-Stopped at: Roadmap and project memory initialized from document ingest. Phases 0–3 recorded as
+Last session: 2026-09-02T14:17:58.601Z
+Stopped at: Phase 4 context gathered
 complete with delivered scope; Phase 4 is current and unplanned.
-Resume file: None
+Resume file: .planning/phases/04-verified-socd-support/04-CONTEXT.md
 
 Next: `/gsd-plan-phase 4`
