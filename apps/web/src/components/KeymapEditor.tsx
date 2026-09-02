@@ -31,6 +31,7 @@ import {
   type SupportedKeycode,
 } from '../lib/client.ts';
 import { BindingPicker } from './BindingPicker.tsx';
+import { BuildPanel } from './BuildPanel.tsx';
 import { MacroEditor } from './MacroEditor.tsx';
 
 export interface KeymapEditorProps {
@@ -62,6 +63,9 @@ export function KeymapEditor({ configuration, positions, keycodes }: KeymapEdito
 
   const [save, setSave] = useState<SaveState>({ status: 'idle' });
   const revisionRef = useRef(configuration.revision);
+  // Draft-ness is the server's verdict and changes as keys are bound, so it is tracked
+  // from save responses rather than frozen at page load.
+  const [isDraft, setIsDraft] = useState(configuration.isDraft);
 
   const layout = useMemo(() => fitToWidth(positions, 1000, { gapPx: 3 }), [positions]);
   const activeLayer = state.document.layers.find((l) => l.index === state.activeLayerIndex);
@@ -80,6 +84,7 @@ export function KeymapEditor({ configuration, positions, keycodes }: KeymapEdito
         socd: null,
       });
       revisionRef.current = updated.revision;
+      setIsDraft(updated.isDraft);
       dispatch({ type: 'saved', revision: updated.revision });
       setSave({ status: 'saved', at: new Date().toLocaleTimeString() });
     } catch (error) {
@@ -201,7 +206,7 @@ export function KeymapEditor({ configuration, positions, keycodes }: KeymapEdito
         </div>
       ) : null}
 
-      {configuration.isDraft ? (
+      {isDraft ? (
         <p className="notice">
           This configuration is a <strong>draft</strong>: no keys are bound yet, so it cannot be
           built. Assign at least one key.
@@ -339,6 +344,14 @@ export function KeymapEditor({ configuration, positions, keycodes }: KeymapEdito
         onAdd={(macro: Macro) => dispatch({ type: 'add_macro', macro })}
         onUpdate={(macro: Macro) => dispatch({ type: 'update_macro', macro })}
         onRemove={(macroId: string) => dispatch({ type: 'remove_macro', macroId })}
+      />
+
+      <BuildPanel
+        configurationId={configuration.id}
+        // A build compiles a stored revision, so anything not yet accepted by the
+        // server blocks the button rather than being silently left out of the firmware.
+        dirty={state.dirty || save.status === 'saving'}
+        isDraft={isDraft}
       />
     </div>
   );

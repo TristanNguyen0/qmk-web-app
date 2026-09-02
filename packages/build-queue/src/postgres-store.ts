@@ -17,7 +17,6 @@
 import type { Pool, PoolClient } from 'pg';
 import type { BuildRecord, BuildStatus, Configuration } from '@qmk-web-app/domain';
 import { assertTransition, isTerminal } from '@qmk-web-app/domain';
-import type { ListPage } from '../configurations/types.ts';
 import { toSummary } from './memory-store.ts';
 import type {
   BuildQueue,
@@ -28,6 +27,7 @@ import type {
   CompleteBuildArgs,
   CreateBuildResult,
   FailBuildArgs,
+  ListPage,
   ReapResult,
 } from './types.ts';
 
@@ -79,6 +79,9 @@ function toRecord(row: BuildRow): BuildRecord {
 
 /** Statuses a worker may still be holding. Used by every lease-guarded write. */
 const IN_FLIGHT = ['preparing', 'building', 'uploading'] as const;
+
+/** Internal signal that a lease-guarded write matched no row, so its transaction must roll back. */
+class LeaseLost extends Error {}
 
 export class PostgresBuildStore implements BuildRepository, BuildQueue {
   readonly #pool: Pool;
@@ -390,53 +393,62 @@ export class PostgresBuildStore implements BuildRepository, BuildQueue {
   }
 
   async complete(args: CompleteBuildArgs): Promise<boolean> {
-    return this.#transaction(async (client) => {
-      // The build update runs first and is conditional on the lease. If it matches no
-      // row, the transaction rolls back and no orphan artifact row is left behind.
-      const updated = await client.query(
-        `UPDATE builds
-            SET status = 'succeeded',
-                artifact_id = $3,
-                output_format = $4,
-                log_reference = $5,
-                build_image_ref = $6,
-                build_image_digest = $7,
-                generator_version = $8,
-                completed_at = now(),
-                claimed_by = NULL,
-                lease_expires_at = NULL
-          WHERE id = $1 AND claimed_by = $2 AND status = 'uploading'`,
-        [
-          args.buildId,
-          args.workerId,
-          args.artifact.id,
-          args.outputFormat,
-          args.logReference,
-          args.buildImageRef,
-          args.buildImageDigest,
-          args.generatorVersion,
-        ],
-      );
-      if ((updated.rowCount ?? 0) === 0) return false;
+    try {
+      return await this.#transaction(async (client) => {
+        // The artifact row must exist before `builds.artifact_id` can reference it.
+        await client.query(
+          `INSERT INTO artifacts
+             (id, build_id, storage_key, original_filename, byte_size, sha256,
+              content_type, expires_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+          [
+            args.artifact.id,
+            args.buildId,
+            args.artifact.storageKey,
+            args.artifact.originalFilename,
+            args.artifact.byteSize,
+            args.artifact.sha256,
+            args.artifact.contentType,
+            args.artifact.expiresAt,
+          ],
+        );
 
-      await client.query(
-        `INSERT INTO artifacts
-           (id, build_id, storage_key, original_filename, byte_size, sha256,
-            content_type, expires_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [
-          args.artifact.id,
-          args.buildId,
-          args.artifact.storageKey,
-          args.artifact.originalFilename,
-          args.artifact.byteSize,
-          args.artifact.sha256,
-          args.artifact.contentType,
-          args.artifact.expiresAt,
-        ],
-      );
-      return true;
-    });
+        const updated = await client.query(
+          `UPDATE builds
+              SET status = 'succeeded',
+                  artifact_id = $3,
+                  output_format = $4,
+                  log_reference = $5,
+                  build_image_ref = $6,
+                  build_image_digest = $7,
+                  generator_version = $8,
+                  completed_at = now(),
+                  claimed_by = NULL,
+                  lease_expires_at = NULL
+            WHERE id = $1 AND claimed_by = $2 AND status = 'uploading'`,
+          [
+            args.buildId,
+            args.workerId,
+            args.artifact.id,
+            args.outputFormat,
+            args.logReference,
+            args.buildImageRef,
+            args.buildImageDigest,
+            args.generatorVersion,
+          ],
+        );
+
+        // Lease lost, or the build never reached `uploading`. Thrown rather than
+        // returned so the transaction rolls back: otherwise the artifact row just
+        // inserted would survive as the recorded output of a build that did not
+        // succeed.
+        if ((updated.rowCount ?? 0) === 0) throw new LeaseLost();
+        return true;
+      });
+    } catch (error) {
+      if (error instanceof LeaseLost) return false;
+      throw error;
+    }
   }
 
   async fail(args: FailBuildArgs): Promise<boolean> {
@@ -466,16 +478,21 @@ export class PostgresBuildStore implements BuildRepository, BuildQueue {
     return (result.rowCount ?? 0) > 0;
   }
 
-  async cancel(args: { buildId: string; workerId: string }): Promise<boolean> {
+  async cancel(args: {
+    buildId: string;
+    workerId: string;
+    logReference?: string | null;
+  }): Promise<boolean> {
     const result = await this.#pool.query(
       `UPDATE builds
           SET status = 'cancelled',
               failure_code = 'CANCELLED',
+              log_reference = COALESCE($3, log_reference),
               completed_at = now(),
               claimed_by = NULL,
               lease_expires_at = NULL
         WHERE id = $1 AND claimed_by = $2 AND status IN ('preparing','building')`,
-      [args.buildId, args.workerId],
+      [args.buildId, args.workerId, args.logReference ?? null],
     );
     return (result.rowCount ?? 0) > 0;
   }

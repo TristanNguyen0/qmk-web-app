@@ -44,9 +44,14 @@ export class ApiRequestError extends Error {
 
 async function request<T>(
   path: string,
-  init: { method?: string; body?: unknown; ifMatch?: number } = {},
+  init: {
+    method?: string;
+    body?: unknown;
+    ifMatch?: number;
+    headers?: Record<string, string>;
+  } = {},
 ): Promise<{ data: T; etag: string | null }> {
-  const headers: Record<string, string> = { accept: 'application/json' };
+  const headers: Record<string, string> = { accept: 'application/json', ...init.headers };
   if (init.body !== undefined) headers['content-type'] = 'application/json';
   if (init.ifMatch !== undefined) headers['if-match'] = `"${init.ifMatch}"`;
 
@@ -138,6 +143,98 @@ export async function updateConfiguration(
 
 export async function deleteConfiguration(id: string): Promise<void> {
   await request<void>(`/v1/configurations/${id}`, { method: 'DELETE' });
+}
+
+/**
+ * A build, exactly as the server describes it.
+ *
+ * There is no client-side notion of "probably done" or "should be downloadable": the
+ * status and the presence of `artifact` come from the server, because only the server
+ * knows whether a firmware exists and has not expired.
+ */
+export interface BuildSummary {
+  id: string;
+  configurationId: string;
+  configurationRevision: number;
+  status:
+    | 'queued'
+    | 'preparing'
+    | 'building'
+    | 'uploading'
+    | 'succeeded'
+    | 'failed'
+    | 'cancelled'
+    | 'expired';
+  failureCode: string | null;
+  requestedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  attemptCount: number;
+  catalogVersion: string;
+  qmkCommit: string;
+  generatorVersion: string;
+  artifact: {
+    filename: string;
+    byteSize: number;
+    sha256: string;
+    contentType: string;
+    expiresAt: string;
+  } | null;
+}
+
+/** Statuses that will not change again without a new build being requested. */
+export function isBuildFinished(status: BuildSummary['status']): boolean {
+  return ['succeeded', 'failed', 'cancelled', 'expired'].includes(status);
+}
+
+/**
+ * Requests a build. `idempotencyKey` must be stable across retries of the *same*
+ * intent, so a failed or repeated request cannot queue a second compile.
+ */
+export async function requestBuild(
+  configurationId: string,
+  idempotencyKey: string,
+): Promise<BuildSummary> {
+  const { data } = await request<{ build: BuildSummary }>(
+    `/v1/configurations/${configurationId}/builds`,
+    { method: 'POST', headers: { 'idempotency-key': idempotencyKey } },
+  );
+  return data.build;
+}
+
+export async function fetchBuild(buildId: string): Promise<BuildSummary> {
+  const { data } = await request<{ build: BuildSummary }>(`/v1/builds/${buildId}`);
+  return data.build;
+}
+
+export async function fetchBuilds(
+  configurationId: string,
+  pageSize = 10,
+): Promise<BuildSummary[]> {
+  const { data } = await request<{ items: BuildSummary[] }>(
+    `/v1/configurations/${configurationId}/builds?pageSize=${pageSize}`,
+  );
+  return data.items;
+}
+
+export async function cancelBuild(buildId: string): Promise<BuildSummary | null> {
+  const { data } = await request<{ build: BuildSummary | null }>(`/v1/builds/${buildId}/cancel`, {
+    method: 'POST',
+  });
+  return data.build;
+}
+
+/**
+ * Download URLs are plain API paths, not storage URLs: the request carries the session
+ * cookie and the API authorizes it (claude.md § Error handling — "Never expose a direct
+ * storage key").
+ */
+export function artifactUrl(buildId: string): string {
+  return `/api/v1/builds/${buildId}/artifact`;
+}
+
+export function buildLogUrl(buildId: string): string {
+  return `/api/v1/builds/${buildId}/log`;
 }
 
 export type { Binding, CatalogKeyPosition, Layer, Macro };

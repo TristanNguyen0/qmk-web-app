@@ -20,6 +20,12 @@ importers:
 
   apps/api:
     dependencies:
+      '@qmk-web-app/artifact-store':
+        specifier: workspace:*
+        version: link:../../packages/artifact-store
+      '@qmk-web-app/build-queue':
+        specifier: workspace:*
+        version: link:../../packages/build-queue
       '@qmk-web-app/domain':
         specifier: workspace:*
         version: link:../../packages/domain
@@ -65,6 +71,21 @@ importers:
         specifier: ^19.0.0
         version: 19.2.4(@types/react@19.2.18)
 
+  packages/artifact-store: {}
+
+  packages/build-queue:
+    dependencies:
+      '@qmk-web-app/domain':
+        specifier: workspace:*
+        version: link:../domain
+      pg:
+        specifier: ^8.13.1
+        version: 8.22.0
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.21.0
+
   packages/domain:
     dependencies:
       zod:
@@ -104,6 +125,12 @@ importers:
 
   services/worker:
     dependencies:
+      '@qmk-web-app/artifact-store':
+        specifier: workspace:*
+        version: link:../../packages/artifact-store
+      '@qmk-web-app/build-queue':
+        specifier: workspace:*
+        version: link:../../packages/build-queue
       '@qmk-web-app/domain':
         specifier: workspace:*
         version: link:../../packages/domain
@@ -116,10 +143,16 @@ importers:
       '@qmk-web-app/qmk-sandbox':
         specifier: workspace:*
         version: link:../../packages/qmk-sandbox
+      pg:
+        specifier: ^8.13.1
+        version: 8.22.0
     devDependencies:
       '@qmk-web-app/qmk-fixtures':
         specifier: workspace:*
         version: link:../../packages/qmk-fixtures
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.21.0
 
 packages:
 

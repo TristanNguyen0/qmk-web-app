@@ -5,17 +5,20 @@
  * Env:
  *   QWA_CATALOG_DIR    default <repo>/catalogs
  *   QWA_DATABASE_URL   default postgres://qwa:qwa_dev_password@127.0.0.1:5433/qwa
+ *   QWA_ARTIFACT_DIR   default <repo>/var/artifacts — must be shared with the worker
  *   QWA_SESSION_SECRET required in production; a dev default is used otherwise
  *   PORT               default 3001
  */
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import pg from 'pg';
+import { FilesystemArtifactStore } from '@qmk-web-app/artifact-store';
 import { buildApp } from './app.ts';
+import { PostgresBuildStore } from '@qmk-web-app/build-queue';
 import { CatalogStore } from './catalog-store.ts';
 import { PostgresConfigurationRepository } from './configurations/postgres-repository.ts';
 import { runMigrations } from './db/migrate.ts';
-import { REPO_ROOT } from '../../../infra/qmk/manifest.ts';
+import { buildImageRef, loadManifest, REPO_ROOT } from '../../../infra/qmk/manifest.ts';
 
 const isProduction = process.env['NODE_ENV'] === 'production';
 
@@ -62,16 +65,36 @@ try {
   process.exit(1);
 }
 
+// The API reads artifacts from the same store the worker writes to. On one host that
+// is a shared directory; ADR 0004 replaces it with S3 behind the same interface when
+// the two stop sharing a filesystem.
+const artifactDir = process.env['QWA_ARTIFACT_DIR']
+  ? resolve(process.env['QWA_ARTIFACT_DIR'])
+  : resolve(REPO_ROOT, 'var', 'artifacts');
+mkdirSync(artifactDir, { recursive: true, mode: 0o750 });
+
+const manifest = loadManifest();
+
 const app = buildApp({
   store,
   repository: new PostgresConfigurationRepository(pool),
+  builds: {
+    repository: new PostgresBuildStore(pool),
+    artifacts: new FilesystemArtifactStore(artifactDir),
+    // What a build of this configuration is *expected* to run in. The worker records
+    // the image it actually used, including its digest, when the build finishes.
+    environment: {
+      imageRef: buildImageRef(manifest),
+      imageDigest: manifest.buildImage.digest,
+    },
+  },
   sessionSecret,
   secureCookies: isProduction,
   logger: true,
 });
 
 app.log.info(
-  { catalogDir, versions: store.versions, active: store.activeVersion },
+  { catalogDir, artifactDir, versions: store.versions, active: store.activeVersion },
   'catalogs loaded',
 );
 

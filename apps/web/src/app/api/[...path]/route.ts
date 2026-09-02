@@ -17,10 +17,29 @@ import type { NextRequest } from 'next/server';
 const API_BASE = process.env['QWA_API_URL'] ?? 'http://127.0.0.1:3001';
 
 /** Headers safe to forward upstream. An allowlist, so nothing unexpected leaks. */
-const FORWARD_REQUEST_HEADERS = ['cookie', 'content-type', 'accept', 'if-match'];
+const FORWARD_REQUEST_HEADERS = [
+  'cookie',
+  'content-type',
+  'accept',
+  'if-match',
+  // Build creation is idempotent on this; dropping it would turn every retry into a
+  // second compile.
+  'idempotency-key',
+];
 
 /** Headers forwarded back. Deliberately excludes hop-by-hop and encoding headers. */
-const FORWARD_RESPONSE_HEADERS = ['content-type', 'etag', 'location', 'cache-control'];
+const FORWARD_RESPONSE_HEADERS = [
+  'content-type',
+  'etag',
+  'location',
+  'cache-control',
+  // Firmware and log downloads: the filename the browser saves under, the size, the
+  // checksum a user can verify, and the sniffing protection the API set.
+  'content-disposition',
+  'content-length',
+  'x-artifact-sha256',
+  'x-content-type-options',
+];
 
 async function proxy(request: NextRequest, path: string[]): Promise<Response> {
   const search = request.nextUrl.search;

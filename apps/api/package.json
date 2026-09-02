@@ -11,6 +11,8 @@
     "dev": "node --experimental-strip-types --watch src/server.ts"
   },
   "dependencies": {
+    "@qmk-web-app/artifact-store": "workspace:*",
+    "@qmk-web-app/build-queue": "workspace:*",
     "@qmk-web-app/domain": "workspace:*",
     "fastify": "^5.2.0",
     "@qmk-web-app/qmk-catalog": "workspace:*",
