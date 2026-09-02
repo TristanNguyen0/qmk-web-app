@@ -30,6 +30,7 @@ possible.
 ## Phases
 
 **Phase Numbering:**
+
 - Integer phases (0, 1, 2, …): Planned milestone work
 - Decimal phases (4.1, 4.2): Urgent insertions (marked with INSERTED)
 
@@ -46,77 +47,103 @@ Decimal phases appear between their surrounding integers in numeric order.
 ## Phase Details
 
 ### Phase 0: Foundations and Decisions
+
 **Status**: Complete
 **Goal**: The stack is decided and recorded, QMK is pinned to one commit, and one keyboard compiles reproducibly on a developer machine.
 **Depends on**: Nothing (first phase)
 **Requirements**: None — this phase delivered decisions and a spike, not a product behaviour
 **Success Criteria** (what became TRUE):
+
   1. Every stack choice is recorded in an ADR with its rationale and migration constraint, so a later reader can tell a decision from an accident — ADR 0001, 14 decisions.
   2. Discovery and builds resolve one commit, `332fa30e173e5b0ecc0c70ff166974b6db86525e` (tag `0.33.13`), from `infra/qmk/manifest.json` as the single source of truth.
   3. One pinned keyboard, one generated base keymap, and one isolated compile succeed end to end, twice, byte-identically.
   4. The spike's surprising finding is itself a recorded decision: with the working directory on the read-only mount, a *successful* `qmk compile` exits 2 — so builds run from a `/workspace/qmkroot` symlink farm instead (ADR 0003, verified on `crkbd/rev1`).
+
 **Delivered**: ADR 0001 (technology stack), ADR 0002 (catalog derives from QMK tooling), ADR 0003 (external QMK userspace); `infra/qmk/manifest.json`; the build image; the reproducibility spike.
 **Plans**: n/a (completed before GSD planning)
 
 ### Phase 1: Catalog and Read-Only UI
+
 **Status**: Complete
 **Goal**: A user can browse every keyboard the pinned revision actually supports, and see honestly why the rest are unavailable.
 **Depends on**: Phase 0
 **Requirements**: REQ-catalog-discovery, REQ-keyboard-selection
 **Success Criteria** (what became TRUE):
+
   1. A user can search and page through the published catalog — 3,748 keyboards — rendered only from server responses, with no client-side keyboard data of its own.
   2. A user can open a keyboard and see its real layouts drawn from validated QMK position metadata, including rotated keys, with keys labelled by physical position index and matrix coordinate rather than invented legends.
   3. A keyboard the catalog cannot offer is reachable and explains *why* it is unsupported, instead of returning 404.
   4. The catalog is an immutable versioned artifact produced by an offline administrative pipeline: a Python extractor inside the pinned image using QMK's own API, then a strict TypeScript normalizer that records unresolvable entries as unsupported and never repairs them.
+
 **Delivered**: `packages/qmk-catalog`, `infra/qmk/extract/extract_catalog.py`, `packages/qmk-fixtures`, the `/v1/catalog` read API, the sharded `catalogs/0.33.13-1/` format, the visual layout renderer, unsupported-state UX.
 **Plans**: n/a (completed before GSD planning)
 
 ### Phase 2: Saved Visual Configurations
+
 **Status**: Complete
 **Goal**: A user can build a real keymap in the browser and trust that it is saved, theirs, and valid.
 **Depends on**: Phase 1
 **Requirements**: REQ-visual-keymap-editor, REQ-limited-keycode-catalog, REQ-structured-macros, REQ-configuration-persistence, REQ-ownership-authorization
 **Success Criteria** (what became TRUE):
+
   1. A user can edit a keymap across layer tabs with a searchable allowlisted keycode picker, layer actions, mod-taps, a selected-position inspector, undo/redo, and debounced autosave.
   2. A user can define macros as structured steps within enforced limits — never by typing C — and a macro that would leave a key held is rejected with a field-level error.
   3. A user's configuration persists with revisions and reloads intact; every read and write is scoped by owner in the SQL predicate, and a cross-session request returns 404 so ids cannot be probed.
   4. A concurrent edit from a second tab produces a visible conflict through `If-Match` rather than a silent overwrite, and the client cannot set `id`, `ownerId`, `revision`, or `schemaVersion`.
   5. Selection state in the editor is signalled by fill, stroke width, and an inset ring — never by colour alone.
+
 **Delivered**: `packages/domain` (typed schema, keycode allowlist, identifier validation, limits, server-side validation), Postgres persistence and revisions, anonymous signed-cookie sessions, `apps/web` keymap editor with undo/redo and autosave.
 **Plans**: n/a (completed before GSD planning)
 
 ### Phase 3: Generation and Server Builds
+
 **Status**: Complete
 **Goal**: A user can turn a saved configuration into real, downloadable firmware without touching a toolchain.
 **Depends on**: Phase 2
 **Requirements**: REQ-owned-keymap-generation, REQ-isolated-compile, REQ-build-lifecycle-api, REQ-build-result-storage-and-download, REQ-error-codes
 **Success Criteria** (what became TRUE):
+
   1. A user can request a build of a *stored revision*, watch it move through `queued → preparing → building → uploading → succeeded`, and cancel it — where cancelling a queued build stops it and cancelling a running one is a request the worker honours at a checkpoint.
   2. A successful build produces a downloadable firmware artifact with its SHA-256, streamed by the API; storage keys are derived from the build id and never reach a client, so there is no URL to share or replay.
   3. A failed build shows a redacted, capped compiler log and a stable error code — never a downloadable file presented as flashable firmware.
   4. Every compile runs in a disposable container with `--network=none`, `--read-only`, `--cap-drop=ALL`, `no-new-privileges`, an unprivileged user, and CPU/memory/pid/wall-clock caps; the QMK tree is verified unmodified after every build, and the artifact is accepted only at the one expected path.
   5. A build request needs an `Idempotency-Key` backed by a unique index, per-session quotas cap concurrent and hourly builds with `BUILD_QUEUE_LIMITED`, artifacts and logs expire after 7 days, and a worker that loses its lease returns the build to the queue rather than stranding it.
+
 **Delivered**: `packages/qmk-generator` (JSON-only generation), `packages/qmk-sandbox` (`BuildSandbox` + hardened Docker), `packages/build-queue`, `packages/artifact-store`, `services/worker` (queue loop, generation, compile, artifact identification, log redaction, lease recovery, retention), the `/v1/builds` API, ADR 0004, the `qwa_worker` database role.
 **Plans**: n/a (completed before GSD planning)
 
 ### Phase 4: Verified SOCD Support
+
 **Status**: Not started — CURRENT
 **Goal**: A user can enable a verified SOCD policy on a supported keyboard and download firmware that demonstrably applies that policy on a real board.
 **Depends on**: Phase 3
 **Requirements**: REQ-socd-policy-choices, REQ-curated-module-registry, REQ-mvp-definition-of-done
 **Success Criteria** (what must be TRUE):
+
   1. A user can turn SOCD on for a supported keyboard, pick a policy from the verified list, and assign four distinct directional keys — and the editor states, in-product, how SOCD resolves against layers, mod-taps, and macro playback.
   2. A user on a keyboard or catalog version whose SOCD prerequisites are unverified sees SOCD offered as unavailable with `CAPABILITY_UNAVAILABLE` and a reason — never a silent failure, and never a guessed compile.
   3. A build with SOCD enabled compiles in the isolated image and produces a downloadable artifact, while the generated keymap directory still contains only allowlisted files and the QMK tree is still verified unmodified afterwards.
   4. Flashing that artifact to a real board demonstrably applies the chosen policy: simultaneous opposite presses resolve as the policy specifies, release ordering behaves as documented, and layer interaction matches the documented rule.
   5. Every clause of `REQ-mvp-definition-of-done` is true — select, edit, save, build, observe, download — with SOCD now among the product-supported options rather than a refused one.
+
 **Plans**: 5 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 04-01-PLAN.md — Land the `worktree-phase-4-socd` branch on main and prove SOCD compiles end to end (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 04-02-PLAN.md — Curated module registry and catalog-version-scoped capability gating (wave 2)
 - [ ] 04-03-PLAN.md — Record the SOCD module version with every build (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 04-04-PLAN.md — Module-hook startup assertion and `mode/m256wh` compile verification (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 04-05-PLAN.md — Hardware verification on `mode/m256wh` — the phase gate (wave 4)
 
 **UI hint**: yes
@@ -130,42 +157,51 @@ Plans:
   only for modes demonstrated to compile and behave. If the facility is absent or changed at the
   pinned revision, the correct output of this phase is a recorded unavailability for this catalog
   version — not guessed compatibility code.
+
 - **Extending the generator beyond JSON is in-scope, not a regression.** ADR 0003's allowlist already
   permits `keymap.json`, `rules.mk`, `config.h`, and `keymap.c`. The shipped generator emits JSON only
   by choice, which is narrower than the decision, not a different one. SOCD needs feature flags in
   `rules.mk`, configuration definitions in `config.h`, and includes plus callbacks in `keymap.c`, all
   through versioned templates. The read-only `/qmk` mount and the external-userspace rules hold with
   no exceptions.
+
 - **One dispatcher, defined order.** Macros and SOCD both want `process_record_user`. Produce one
   application-owned callback that dispatches each enabled feature in a defined order. Do not append a
   second callback and do not inject snippets into arbitrary callbacks.
+
 - **Capability gating rides on the module registry.** `REQ-curated-module-registry` ships here with
   exactly one entry — SOCD Cleaner — pinning source revision, license, minimum QMK/module API version,
   template version, supported options, compatibility tests, and prerequisites. That entry is what
   `listSocdCapabilities(catalogVersion, keyboardId)` reads, and what lets the validator's current
   blanket refusal in `packages/domain/src/validate.ts` become a prerequisite-driven
   `CAPABILITY_UNAVAILABLE` instead of an unconditional one.
+
 - **Test surface.** Compile fixtures per selectable policy in the real isolated image (not a mock,
   per ADR-0001-testing); unit or simulation tests for simultaneous opposite presses, release
   ordering, and layer interaction; snapshot tests on generated `rules.mk`/`config.h`/`keymap.c`
   reviewed deliberately when template or QMK versions change; containment assertions that the new
   file types cannot escape the generated keymap directory.
+
 - **The hardware run is the gate, not a formality.** Criterion 4 is the milestone success metric.
   Compiling is necessary and not sufficient.
+
 - **Labelling.** SOCD behaviour, supported directional-key groups, and game/tournament compliance are
   labelled user responsibility (`claude.md` rule 10). The product makes no compliance claims.
 
 ### Phase 5: Hardening and Scale
+
 **Status**: Not started
 **Goal**: The application is safe to expose to people who are not the developer who built it.
 **Depends on**: Phase 4
 **Requirements**: REQ-hardening-abuse-controls, REQ-observability-telemetry, REQ-smoke-matrix, REQ-backup-retention-controls, REQ-launch-identity-model
 **Success Criteria** (what must be TRUE):
+
   1. A burst of build requests — from one IP, or from many fresh sessions — is absorbed by a global concurrency limit and queue backpressure, returning `BUILD_QUEUE_LIMITED` instead of saturating the single host.
   2. An operator can see queue depth, build throughput, failure classification, and worker liveness from exported OpenTelemetry-compatible telemetry, with redaction applied to every sink.
   3. A change to the generator, templates, QMK pin, or build image cannot merge without the curated smoke matrix compiling — so "catalogued" stops being quietly mistaken for "known to build".
   4. An operator can restore configurations and artifacts from a backup and can state what retention actually deleted and when.
   5. The launch identity model is decided and recorded: either accounts exist and a user can reach their configurations from a second device, or anonymous-only is a stated launch constraint whose data-loss behaviour is visible in-product.
+
 **Plans**: TBD
 
 **Scope notes**: `README.md` § Known gaps names the concrete targets — no global concurrency limit or
@@ -177,16 +213,19 @@ legal/licensing review for QMK and bundled assets before public deployment. If c
 "accounts", that adds frontend work and this phase gains a UI contract.
 
 ### Phase 6: Browser Flashing Research and Rollout
+
 **Status**: Not started
 **Goal**: A user either flashes from the browser on hardware where support has been *detected*, or is told precisely why they cannot and handed the download path that has always worked.
 **Depends on**: Phase 5
 **Requirements**: REQ-flashing-compatibility-matrix, REQ-flashing-rollout
 **Success Criteria** (what must be TRUE):
+
   1. A read-only compatibility matrix exists, built from actual artifact formats, bootloaders, browsers, operating systems, and permissions observed in practice — not from assumptions about what should work.
   2. The flashing approach is chosen by an explicit user decision *after* that matrix exists, and is recorded in a new ADR that supersedes ADR-0001-browser-flashing rather than letting it drift.
   3. A user on a detected-supported browser and board can flash from the browser; every other user is shown the download path and the specific reason their combination is unsupported.
   4. No flashing claim, button, or affordance appears anywhere before detection has verified it for that user's combination.
   5. Download and manual flashing remain fully working throughout the rollout and are never regressed into a fallback that nobody tested.
+
 **Plans**: TBD
 **UI hint**: yes
 
