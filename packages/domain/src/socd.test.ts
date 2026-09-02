@@ -41,6 +41,20 @@ describe('policies', () => {
     expect(result.success).toBe(false);
   });
 
+  it('rejects a case-differing variant of a published policy id — exact match, no folding', () => {
+    // 'Neutral' and 'NEUTRAL' are not 'neutral': matching is exact string equality
+    // against the frozen table, never case-insensitive.
+    for (const policyId of ['Neutral', 'NEUTRAL', 'neutral ']) {
+      const result = socdConfigurationSchema.safeParse({
+        enabled: true,
+        policyId,
+        directionalKeys: { up: 0, down: 1, left: 2, right: 3 },
+        directionalKeycodes: { up: 'KC_W', down: 'KC_S', left: 'KC_A', right: 'KC_D' },
+      });
+      expect(result.success, policyId).toBe(false);
+    }
+  });
+
   it('gives every policy a label and a description a user can act on', () => {
     for (const policy of SOCD_POLICIES) {
       expect(policy.label.length).toBeGreaterThan(0);
@@ -84,6 +98,14 @@ describe('pairs and keycodes', () => {
   it('maps every (policy, direction) to a distinct module keycode', () => {
     // Two directions sharing a keycode would silently send the wrong key.
     expect(new Set(SOCD_MODULE_KEYCODES).size).toBe(SOCD_MODULE_KEYCODES.length);
+  });
+
+  it('rejects a case-differing variant of a real keycode token — no module keycode is produced', () => {
+    // Matching is exact string equality against the frozen table, never case-
+    // insensitive: 'kc_w' and 'Kc_W' are not 'KC_W'.
+    expect(socdModuleKeycode('neutral', 'kc_w')).toBeNull();
+    expect(socdModuleKeycode('neutral', 'Kc_W')).toBeNull();
+    expect(socdModuleKeycode('NEUTRAL', 'KC_W')).toBeNull();
   });
 
   it('returns null rather than guessing for an unknown combination', () => {
