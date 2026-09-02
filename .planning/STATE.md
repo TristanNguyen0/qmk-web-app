@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 current_phase: 04
 current_phase_name: Verified SOCD Support
 status: executing
-stopped_at: Completed 04-03-PLAN.md
-last_updated: "2026-09-02T19:37:41.742Z"
+stopped_at: Completed 04-04-PLAN.md
+last_updated: "2026-09-02T20:03:01.738Z"
 last_activity: 2026-09-02
 last_activity_desc: Phase 04 execution started
-state_head: e0473d45b3409938a73f447c39308f64d8cc9dc7
+state_head: 3fe6e7cdf80ba8db13d343c15cb795c697140a2a
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 5
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ never guessed.
 ## Current Position
 
 Phase: 04 (Verified SOCD Support) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-09-02 — Phase 04 execution started
 
@@ -53,6 +53,7 @@ No GSD-tracked executions yet — Phases 0–3 predate this planning directory.
 | Phase 04 P01 | 25 min | 3 tasks | 70 files |
 | Phase 04 P02 | 19min | 3 tasks | 13 files |
 | Phase 04 P03 | 10min | 3 tasks | 12 files |
+| Phase 04 P04 | 16min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -81,6 +82,9 @@ No GSD-tracked executions yet — Phases 0–3 predate this planning directory.
 - [Phase 04]: validate.ts now calls socdCapabilitiesFor directly instead of re-deriving its own registry lookup — Keeps exactly one source of truth for SOCD availability between the API route and the server-side validator
 - [Phase 04]: socdModuleVersion is required (never optional) on BuildRecord/CompleteBuildArgs, mirroring the outputFormat/logReference/failureCode 'known eventually, null until then' pattern rather than allowing silent omission
 - [Phase 04]: Extended packages/domain/src/build.ts's BuildRecord outside the plan's declared files (Rule 3) because memory-store.ts's completion path assigns directly onto the domain record, the same way it already assigns generatorVersion
+- [Phase 04]: [Phase 4] Rebuilt qmk-web-app/qmk-build:0.33.13-1 after editing container-entrypoint.sh — the entrypoint is baked into the image at build time, not read from the host checkout at run time — Discovered when the third pnpm env:verify boundary case silently passed instead of failing
+- [Phase 04]: [Phase 4] Parameterised generateKeymap's SOCD registry gate (GenerateOptions.verifiedSocdKeyboards) instead of bypassing it, so only the compile matrix can supply its own candidate allowlist — Every worker/API build path keeps the real registry-derived default unchanged; only the operator-run compile matrix breaks the D-06 chicken-and-egg
+- [Phase 04]: [Phase 4] mode/m256wh (ARM/STM32) entered MODULE_REGISTRY at compile-only strength after a real 4-build socd:matrix run — the project's first non-AVR compile — D-06/D-10: both AVR and ARM/STM32 toolchains now represented, no hardware claim anywhere yet
 
 ### Pending Todos
 
@@ -119,8 +123,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-02T19:37:41.719Z
-Stopped at: Completed 04-03-PLAN.md
+Last session: 2026-09-02T20:03:01.721Z
+Stopped at: Completed 04-04-PLAN.md
 complete with delivered scope; Phase 4 is current and unplanned.
 Resume file: None
 

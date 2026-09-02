@@ -126,7 +126,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Flashing that artifact to a real board demonstrably applies the chosen policy: simultaneous opposite presses resolve as the policy specifies, release ordering behaves as documented, and layer interaction matches the documented rule.
   5. Every clause of `REQ-mvp-definition-of-done` is true — select, edit, save, build, observe, download — with SOCD now among the product-supported options rather than a refused one.
 
-**Plans**: 3/5 plans executed
+**Plans**: 4/5 plans executed
 
 Plans:
 **Wave 1**
@@ -140,7 +140,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 04-04-PLAN.md — Module-hook startup assertion and `mode/m256wh` compile verification (wave 3)
+- [x] 04-04-PLAN.md — Module-hook startup assertion and `mode/m256wh` compile verification (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -258,7 +258,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → **4** → 5 → 6
 | 1. Catalog and Read-Only UI | n/a (pre-GSD) | Complete | - |
 | 2. Saved Visual Configurations | n/a (pre-GSD) | Complete | - |
 | 3. Generation and Server Builds | n/a (pre-GSD) | Complete | 2026-08-09 |
-| 4. Verified SOCD Support | 3/5 | In Progress|  |
+| 4. Verified SOCD Support | 4/5 | In Progress|  |
 | 5. Hardening and Scale | 0/TBD | Not started | - |
 | 6. Browser Flashing Research and Rollout | 0/TBD | Not started | - |
 
