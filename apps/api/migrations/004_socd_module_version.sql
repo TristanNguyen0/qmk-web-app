@@ -1,0 +1,23 @@
+-- Extends the reproducibility triple on `builds` with the SOCD module version.
+--
+-- claude.md rule 6: the QMK commit used for a build must be persisted so results are
+-- reproducible. `builds` already carries `catalog_version`, `qmk_commit`,
+-- `generator_version`, `build_image_ref`, and `build_image_digest`
+-- (apps/api/migrations/002_builds.sql) for exactly that reason. SOCD adds a new input
+-- to the firmware: a versioned first-party community module whose C is compiled into
+-- the image (D-03, .planning/phases/04-verified-socd-support/04-CONTEXT.md). Without
+-- naming it here, two artifacts built from the same configuration revision under
+-- different module versions would be indistinguishable after the fact.
+--
+-- `socd_module_version` joins the existing set as one more nullable reproducibility
+-- column, not a separate provenance table. It is null for a build whose configuration
+-- did not enable SOCD — never a placeholder or an empty string.
+--
+-- No grant change accompanies this migration: `qwa_worker` already holds table-level
+-- `GRANT SELECT, UPDATE ON builds` (apps/api/migrations/003_worker_role.sql), not
+-- column-restricted, so a new nullable column needs no companion grant.
+--
+-- ADD COLUMN IF NOT EXISTS keeps this idempotent even outside the runner's
+-- `schema_migrations` bookkeeping (apps/api/src/db/migrate.ts).
+
+ALTER TABLE builds ADD COLUMN IF NOT EXISTS socd_module_version TEXT;
