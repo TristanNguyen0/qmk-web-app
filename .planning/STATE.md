@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 current_phase: 04
 current_phase_name: Verified SOCD Support
 status: executing
-stopped_at: Completed 04-01-PLAN.md
-last_updated: "2026-09-02T19:04:52.842Z"
+stopped_at: Completed 04-02-PLAN.md
+last_updated: "2026-09-02T19:26:29.347Z"
 last_activity: 2026-09-02
 last_activity_desc: Phase 04 execution started
-state_head: f4804969ff0f83880eff03fc9412579702186ec1
+state_head: 02f960a440ef501cecb07f6e070eb6c7c15b7893
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 5
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ never guessed.
 ## Current Position
 
 Phase: 04 (Verified SOCD Support) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-09-02 — Phase 04 execution started
 
@@ -51,6 +51,7 @@ No GSD-tracked executions yet — Phases 0–3 predate this planning directory.
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 04 P01 | 25 min | 3 tasks | 70 files |
+| Phase 04 P02 | 19min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -75,6 +76,8 @@ No GSD-tracked executions yet — Phases 0–3 predate this planning directory.
   verified detection.
 
 - [Phase 04]: Landed worktree-phase-4-socd (683270f) onto main via deterministic branch-diff conflict resolution; also gitignored .gsd/ and .planning/*.lock alongside .claude/ — Same runtime-tooling-state leak rationale the plan applies to .claude/
+- [Phase 04]: Broke a real circular ES-module import (socd.ts <-> module-registry.ts) with a lazily-computed, self-caching getter for supportedOptions instead of restructuring ownership — Eager top-level evaluation would throw a TDZ ReferenceError whenever socd.ts is evaluated before module-registry.ts; verified safe against the worst-case entry order
+- [Phase 04]: validate.ts now calls socdCapabilitiesFor directly instead of re-deriving its own registry lookup — Keeps exactly one source of truth for SOCD availability between the API route and the server-side validator
 
 ### Pending Todos
 
@@ -113,8 +116,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-02T19:04:52.825Z
-Stopped at: Completed 04-01-PLAN.md
+Last session: 2026-09-02T19:26:29.329Z
+Stopped at: Completed 04-02-PLAN.md
 complete with delivered scope; Phase 4 is current and unplanned.
 Resume file: None
 
