@@ -180,6 +180,10 @@ if (missingFixtures.length > 0) {
 // candidate keyboard could never be compiled in the first place, since nothing would
 // ever add it to `verifiedKeyboards` before this script ran.
 const candidateKeyboards = Object.keys(FIXTURES);
+// Passed to generateKeymap (via runBuild) as the trusted allowlist this script's
+// own run is entitled to compile against — see GenerateOptions.verifiedSocdKeyboards
+// for why only this script may supply it.
+const candidateKeyboardSet = new Set(candidateKeyboards);
 
 /**
  * Structural validation for a matrix-built configuration — deliberately NOT the
@@ -339,6 +343,7 @@ for (const keyboardId of candidateKeyboards) {
       keyboard,
       sandbox,
       redactPaths: [qmkSourcePath(manifest)],
+      verifiedSocdKeyboards: candidateKeyboardSet,
     });
 
     if (result.status !== 'succeeded') {

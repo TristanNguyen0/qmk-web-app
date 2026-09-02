@@ -66,22 +66,28 @@ describe('MODULE_REGISTRY shape', () => {
       // @ts-expect-error intentional mutation attempt against a frozen array
       entry.verifiedFor.push({});
     }).toThrow(TypeError);
-    expect(entry.verifiedFor).toHaveLength(1);
+    expect(entry.verifiedFor).toHaveLength(2);
   });
 });
 
 describe('verifiedFor', () => {
-  it('contains exactly one compile-only record for crkbd/rev1', () => {
+  it('records both crkbd/rev1 and mode/m256wh, compile-only, on catalog 0.33.13-1', () => {
     const entry = MODULE_REGISTRY['qmkweb/socd_cleaner'];
-    expect(entry.verifiedFor).toHaveLength(1);
-    const [record] = entry.verifiedFor;
-    expect(record?.keyboardId).toBe('crkbd/rev1');
-    expect(record?.catalogVersion).toBe('0.33.13-1');
-    expect(record?.qmkCommit).toBe('332fa30e173e5b0ecc0c70ff166974b6db86525e');
-    expect(record?.verification).toBe('compile');
+    expect(entry.verifiedFor).toHaveLength(2);
+
+    const byKeyboard = new Map(entry.verifiedFor.map((r) => [r.keyboardId, r]));
+    expect([...byKeyboard.keys()].sort()).toEqual(['crkbd/rev1', 'mode/m256wh']);
+
+    for (const keyboardId of ['crkbd/rev1', 'mode/m256wh'] as const) {
+      const record = byKeyboard.get(keyboardId);
+      expect(record?.catalogVersion).toBe('0.33.13-1');
+      expect(record?.qmkCommit).toBe('332fa30e173e5b0ecc0c70ff166974b6db86525e');
+      expect(record?.verification).toBe('compile');
+      expect(record?.evidence).toBeTruthy();
+    }
   });
 
-  it('carries no compile+hardware record yet', () => {
+  it('carries no compile+hardware record anywhere yet (D-09)', () => {
     const entry = MODULE_REGISTRY['qmkweb/socd_cleaner'];
     expect(entry.verifiedFor.some((r) => r.verification === 'compile+hardware')).toBe(false);
   });

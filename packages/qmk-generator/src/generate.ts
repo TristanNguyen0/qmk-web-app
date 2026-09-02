@@ -222,6 +222,23 @@ export interface GenerateOptions {
   keyboard: SupportedCatalogKeyboard;
   /** Used only to derive a safe keymap directory name. Never the user's name. */
   buildId: string;
+  /**
+   * The set of keyboard ids SOCD may be generated for, at this configuration's
+   * catalog version. Defaults to the curated registry's own verified set
+   * (`socdVerifiedKeyboards(configuration.catalogVersion)`) — every production and
+   * worker build path relies on that default and must never override it; doing so
+   * would defeat the defence-in-depth check below (T-04-05, a registry claim
+   * without a compile behind it).
+   *
+   * The one caller allowed to supply its own set is
+   * `services/worker/scripts/socd-compile-matrix.ts`: the trusted, operator-run
+   * tool that PRODUCES the compile evidence a `verifiedFor` record is earned from.
+   * Requiring the record to already exist there would make that evidence
+   * impossible to produce — the chicken-and-egg D-06 exists to avoid. The check
+   * itself is never skipped, only its source list is parameterised, and only for
+   * that one script.
+   */
+  verifiedSocdKeyboards?: ReadonlySet<string>;
 }
 
 export function generateKeymap(options: GenerateOptions): GenerationResult {
@@ -231,7 +248,9 @@ export function generateKeymap(options: GenerateOptions): GenerationResult {
     throw new GenerationError('configuration and catalog keyboard record disagree');
   }
   const socd = configuration.socd?.enabled ? configuration.socd : null;
-  if (socd && !socdVerifiedKeyboards(configuration.catalogVersion).has(configuration.keyboardId)) {
+  const verifiedSocdKeyboards =
+    options.verifiedSocdKeyboards ?? socdVerifiedKeyboards(configuration.catalogVersion);
+  if (socd && !verifiedSocdKeyboards.has(configuration.keyboardId)) {
     // Defence in depth: validation refuses this first, but generation is the last gate
     // before a compiler, so it does not assume validation ran (claude.md rule 9). The
     // registry lookup is catalog-version aware (D-02), so this also catches a

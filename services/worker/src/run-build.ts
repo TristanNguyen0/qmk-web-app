@@ -45,6 +45,13 @@ export interface RunBuildOptions {
   /** Host paths to strip from user-visible logs. */
   redactPaths?: readonly string[];
   limits?: Partial<SandboxLimits>;
+  /**
+   * Forwarded to `generateKeymap`'s `verifiedSocdKeyboards` option unchanged.
+   * Undefined by default, which keeps the generator's own registry-derived
+   * default (every worker/API build path). See that option's doc comment —
+   * only `services/worker/scripts/socd-compile-matrix.ts` supplies this.
+   */
+  verifiedSocdKeyboards?: ReadonlySet<string>;
 }
 
 export type RunBuildResult =
@@ -93,7 +100,12 @@ export async function runBuild(options: RunBuildOptions): Promise<RunBuildResult
 
     let generation;
     try {
-      generation = generateKeymap({ configuration, keyboard, buildId });
+      generation = generateKeymap({
+        configuration,
+        keyboard,
+        buildId,
+        ...(options.verifiedSocdKeyboards ? { verifiedSocdKeyboards: options.verifiedSocdKeyboards } : {}),
+      });
       writeGeneratedFiles(layout, generation);
       if (generation.requiresSocdModule) {
         // Static, digest-verified first-party source — not generated output, which is

@@ -212,9 +212,10 @@ export const MODULE_REGISTRY: Readonly<Record<'qmkweb/socd_cleaner', CuratedModu
         'the keyboard has a matching record in verifiedFor for the requested catalog version',
       ],
 
-      // Seeded with the single claim earned so far (plan 04-01's socd:matrix run).
-      // Do not add mode/m256wh here — plan 04 adds it after a real matrix run, and
-      // plan 05 upgrades a record's strength after a hardware run.
+      // crkbd/rev1 (AVR) earned in plan 04-01's socd:matrix run; mode/m256wh
+      // (ARM/STM32) earned in plan 04-04's real 4-build matrix run (D-06, D-10) —
+      // both compile-only. Plan 05 upgrades a record's strength after a hardware
+      // run; no record here may carry a hardware strength until then (D-09).
       verifiedFor: [
         {
           catalogVersion: '0.33.13-1',
@@ -222,6 +223,15 @@ export const MODULE_REGISTRY: Readonly<Record<'qmkweb/socd_cleaner', CuratedModu
           keyboardId: 'crkbd/rev1',
           verification: 'compile',
           evidence: 'pnpm socd:matrix catalogs/0.33.13-1 (2026-09-02 run, both policies)',
+        },
+        {
+          catalogVersion: '0.33.13-1',
+          qmkCommit: '332fa30e173e5b0ecc0c70ff166974b6db86525e',
+          keyboardId: 'mode/m256wh',
+          verification: 'compile',
+          evidence:
+            'pnpm socd:matrix catalogs/0.33.13-1 (2026-09-02 run, both policies; first ' +
+            'ARM/STM32 compile, .bin artifact, 64696 bytes)',
         },
       ],
 
