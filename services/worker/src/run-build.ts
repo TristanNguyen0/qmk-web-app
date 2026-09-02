@@ -27,7 +27,11 @@ import {
   writeGeneratedFiles,
 } from '@qmk-web-app/qmk-generator';
 import type { BuildSandbox, SandboxLimits } from '@qmk-web-app/qmk-sandbox';
-import { SocdModuleError, materializeSocdModule } from '@qmk-web-app/qmk-socd-module';
+import {
+  SOCD_MODULE_VERSION,
+  SocdModuleError,
+  materializeSocdModule,
+} from '@qmk-web-app/qmk-socd-module';
 import { ArtifactError, collectArtifact, type CollectedArtifact } from './collect-artifact.ts';
 import { redactLog } from './redact.ts';
 
@@ -52,6 +56,14 @@ export type RunBuildResult =
       imageRef: string;
       imageDigest: string | null;
       generatorVersion: string;
+      /**
+       * D-03: the SOCD community module version compiled into this build's firmware,
+       * read from `SOCD_MODULE_VERSION` — never from the configuration or a
+       * client-supplied value, since it is a property of the code that ran, not of
+       * the request. Null when this build's configuration did not require the SOCD
+       * module.
+       */
+      socdModuleVersion: string | null;
     }
   | {
       status: 'failed';
@@ -61,6 +73,8 @@ export type RunBuildResult =
       imageRef: string;
       imageDigest: string | null;
       generatorVersion: string | null;
+      /** A failed build produced no artifact to attribute a module version to. */
+      socdModuleVersion: null;
     };
 
 export async function runBuild(options: RunBuildOptions): Promise<RunBuildResult> {
@@ -97,6 +111,7 @@ export async function runBuild(options: RunBuildOptions): Promise<RunBuildResult
           imageRef: '',
           imageDigest: null,
           generatorVersion: null,
+          socdModuleVersion: null,
         };
       }
       throw error;
@@ -145,6 +160,7 @@ export async function runBuild(options: RunBuildOptions): Promise<RunBuildResult
         imageRef: run.imageRef,
         imageDigest: run.imageDigest,
         generatorVersion: generation.generatorVersion,
+        socdModuleVersion: null,
       };
     }
 
@@ -161,6 +177,7 @@ export async function runBuild(options: RunBuildOptions): Promise<RunBuildResult
           imageRef: run.imageRef,
           imageDigest: run.imageDigest,
           generatorVersion: generation.generatorVersion,
+          socdModuleVersion: null,
         };
       }
       throw error;
@@ -174,6 +191,7 @@ export async function runBuild(options: RunBuildOptions): Promise<RunBuildResult
       imageRef: run.imageRef,
       imageDigest: run.imageDigest,
       generatorVersion: generation.generatorVersion,
+      socdModuleVersion: generation.requiresSocdModule ? SOCD_MODULE_VERSION : null,
     };
   } finally {
     // Step 10: cleanup happens regardless of outcome, including on a thrown error.

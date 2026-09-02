@@ -20,6 +20,7 @@ import {
   type SupportedCatalogKeyboard,
 } from '@qmk-web-app/domain';
 import { GENERATOR_VERSION } from '@qmk-web-app/qmk-generator';
+import { SOCD_MODULE_VERSION } from '@qmk-web-app/qmk-socd-module';
 import type { BuildSandbox, SandboxRunRequest, SandboxRunResult } from '@qmk-web-app/qmk-sandbox';
 import { expectedTargetName } from './collect-artifact.ts';
 import { runBuild } from './run-build.ts';
@@ -126,6 +127,7 @@ describe('SOCD module placement', () => {
     expect(sandbox.userspaceAtCompile).toContain('modules/qmkweb/socd_cleaner/socd_cleaner.c');
     expect(sandbox.userspaceAtCompile).toContain('modules/qmkweb/socd_cleaner/qmk_module.json');
     expect(sandbox.userspaceAtCompile).toContain('modules/qmkweb/socd_cleaner/socd_resolve.h');
+    expect(result.status === 'succeeded' && result.socdModuleVersion).toBe(SOCD_MODULE_VERSION);
   });
 
   it('leaves the module out entirely when SOCD is off', async () => {
@@ -134,6 +136,33 @@ describe('SOCD module placement', () => {
 
     expect(result.status).toBe('succeeded');
     expect(sandbox.userspaceAtCompile.some((f) => f.startsWith('modules/'))).toBe(false);
+    expect(result.status === 'succeeded' && result.socdModuleVersion).toBeNull();
+  });
+
+  it('returns a null module version for a failed build even when SOCD was enabled', async () => {
+    const failingSandbox: BuildSandbox = {
+      verify: async () => {},
+      run: async () => ({
+        outcome: 'failed',
+        exitCode: 1,
+        stdout: '',
+        stderr: 'compile error',
+        truncated: false,
+        durationMs: 1,
+        imageRef: 'fake',
+        imageDigest: null,
+      }),
+    };
+
+    const result = await runBuild({
+      buildId: BUILD_ID,
+      configuration: config(true),
+      keyboard,
+      sandbox: failingSandbox,
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.socdModuleVersion).toBeNull();
   });
 
   it('still writes only qmk.json and keymap.json as generated output', async () => {

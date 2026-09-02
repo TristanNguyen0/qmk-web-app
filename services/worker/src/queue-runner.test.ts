@@ -13,6 +13,7 @@ import { InMemoryArtifactStore, artifactKey, logKey } from '@qmk-web-app/artifac
 import { InMemoryBuildStore } from '@qmk-web-app/build-queue';
 import type { BuildRecord, Catalog, Configuration } from '@qmk-web-app/domain';
 import { readCatalogSample } from '@qmk-web-app/qmk-fixtures';
+import { SOCD_MODULE_VERSION } from '@qmk-web-app/qmk-socd-module';
 import type {
   BuildSandbox,
   SandboxOutcome,
@@ -122,6 +123,7 @@ function buildRecord(overrides: Partial<BuildRecord> = {}): BuildRecord {
     catalogVersion: catalog.catalogVersion,
     qmkCommit: catalog.qmkCommit,
     generatorVersion: '1',
+    socdModuleVersion: null,
     buildImageRef: 'qmk-web-app/qmk-build:test',
     buildImageDigest: null,
     status: 'queued',
@@ -175,10 +177,43 @@ describe('QueueRunner.runOnce', () => {
     expect(build?.outputFormat).toBe('hex');
     // The image actually used is recorded, digest included, per claude.md § Build isolation.
     expect(build?.buildImageDigest).toBe('sha256:' + 'd'.repeat(64));
+    // No SOCD in this configuration, so no module version is attributed.
+    expect(build?.socdModuleVersion).toBeNull();
 
     const artifact = await queue.getArtifact(buildId, OWNER);
     expect(artifact?.byteSize).toBe(sandbox.firmware.byteLength);
     expect(await artifacts.get(artifactKey(buildId))).toEqual(sandbox.firmware);
+  });
+
+  it('records the SOCD module version the compile used, passed through unchanged', async () => {
+    configuration = {
+      ...configuration,
+      layers: [
+        {
+          id: '33333333-3333-4333-8333-333333333331',
+          index: 0,
+          name: 'Base',
+          bindings: {
+            '0': { kind: 'keycode', keycode: 'KC_W' },
+            '1': { kind: 'keycode', keycode: 'KC_S' },
+            '2': { kind: 'keycode', keycode: 'KC_A' },
+            '3': { kind: 'keycode', keycode: 'KC_D' },
+          },
+        },
+      ],
+      socd: {
+        enabled: true,
+        policyId: 'neutral',
+        directionalKeys: { up: 0, down: 1, left: 2, right: 3 },
+        directionalKeycodes: { up: 'KC_W', down: 'KC_S', left: 'KC_A', right: 'KC_D' },
+      },
+    };
+
+    const buildId = await enqueue();
+    expect(await runner.runOnce()).toBe('succeeded');
+
+    const build = await queue.get(buildId, OWNER);
+    expect(build?.socdModuleVersion).toBe(SOCD_MODULE_VERSION);
   });
 
   it('names the artifact from the build id, never from the configuration name', async () => {

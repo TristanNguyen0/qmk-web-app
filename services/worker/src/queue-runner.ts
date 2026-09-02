@@ -337,6 +337,7 @@ export class QueueRunner {
       buildImageRef: result.imageRef,
       buildImageDigest: result.imageDigest,
       generatorVersion: result.generatorVersion,
+      socdModuleVersion: result.socdModuleVersion,
     });
 
     if (!completed) {
