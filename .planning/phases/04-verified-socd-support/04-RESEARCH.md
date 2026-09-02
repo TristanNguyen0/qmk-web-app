@@ -527,7 +527,10 @@ research or generated code that assumes this function exists as wrong.
 | A2 | `expectedTargetName()`'s `keyboardId.replace('/','_') + '_' + keymapName` pattern matches QMK's actual output filename for STM32 targets, same as it does for AVR | Pitfall 5 | Medium — if QMK's STM32 build naming differs, the first `mode/m256wh` compile will surface `ARTIFACT_NOT_PRODUCED` rather than a SOCD-specific failure; distinguishing the two failure modes matters for triage |
 | A3 | Adding a `builds.socd_module_version` column requires no `qwa_worker` grant change | Code Examples § D-03 | Low — table-level `GRANT UPDATE` was read directly from the migration file this session; risk only if a future migration narrows the grant to specific columns |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+Both questions below were operationally settled during planning; each carries an explicit
+`RESOLVED:` answer naming where it was settled. Nothing in this section is still open.
 
 1. **Does the module-hook API version registry entry (D-04) need a numeric comparison,
    or is presence-of-file sufficient?**
@@ -539,9 +542,17 @@ research or generated code that assumes this function exists as wrong.
      more cheaply than a full compile) or check something else the compile-time assert
      doesn't (e.g., that the hook the module actually *uses*, `process_record`, exists
      at the pinned revision's latest hook version — it does, verified).
-   - Recommendation: make the startup check redundant-but-cheap insurance against a
-     tree mismatch (same intent as the existing `qmk_userspace_supported` check), not a
-     replacement for the compile-time assert.
+   - **RESOLVED: numeric comparison**, implemented as redundant-but-cheap insurance against a
+     tree mismatch (same intent as the existing `qmk_userspace_supported` check), not a replacement
+     for the compile-time assert. Settled operationally in `04-04-PLAN.md` Task 1: the
+     `module_hook_api_version_ok` check parses each `data/constants/module_hooks/` filename into an
+     integer triple, takes the highest, and compares it **component-wise against integers, never
+     strings**, so a two-digit patch component ranks correctly. The minimum comes from the curated
+     registry entry's `minimumHookApiVersion` (`04-02-PLAN.md` Task 1), not from a literal. That the
+     comparison is genuinely numeric rather than presence-of-file is proven by the three-point
+     boundary check `pnpm env:verify` runs against the pinned tree: pass at the declared minimum,
+     pass one patch step below the tree's highest, fail one major step above it — a presence check
+     could not distinguish the third case from the first two.
 
 2. **Which directional pair does the hardware run exercise — W/S+A/D, arrows, or both?**
    - What we know: `mode/m256wh`'s `LAYOUT_65_ansi_blocker` has both pairs present
@@ -550,9 +561,14 @@ research or generated code that assumes this function exists as wrong.
      unverified on this specific board (D-07 says hardware exists to "prove wiring,
      keycode registration, flash fit" — a pair not tested has none of those proven for
      it specifically, only for the shared resolution logic).
-   - Recommendation: test both pairs if time permits (same board, same flash); if only
-     one, record in `04-VERIFICATION.md` explicitly which pair was tested and that the
-     other pair's *logic* (not wiring) is covered by `socd_resolve_test.c`.
+   - **RESOLVED: W/A/S/D.** `04-CONTEXT.md` leaves the choice to Claude's discretion, and the
+     discretion was exercised: `04-04-PLAN.md` Task 2 pins the compile fixture to the W/A/S/D pair at
+     the verified position indices, and `04-05-PLAN.md` flashes and observes that same pair. The
+     answer is not left implicit on the record — "the directional pair exercised" is a required
+     evidence field of `04-VERIFICATION.md`, created in its not-yet-run state by `04-01-PLAN.md`
+     Task 3 and filled by `04-05-PLAN.md`. So a run covering only one pair says so explicitly, and
+     the untested pair's *logic* (not its wiring) remains covered by `socd_resolve_test.c`'s 2,070
+     host assertions.
 
 ## Validation Architecture
 
