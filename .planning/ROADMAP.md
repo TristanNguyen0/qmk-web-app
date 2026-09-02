@@ -110,7 +110,15 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. A build with SOCD enabled compiles in the isolated image and produces a downloadable artifact, while the generated keymap directory still contains only allowlisted files and the QMK tree is still verified unmodified afterwards.
   4. Flashing that artifact to a real board demonstrably applies the chosen policy: simultaneous opposite presses resolve as the policy specifies, release ordering behaves as documented, and layer interaction matches the documented rule.
   5. Every clause of `REQ-mvp-definition-of-done` is true — select, edit, save, build, observe, download — with SOCD now among the product-supported options rather than a refused one.
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+- [ ] 04-01-PLAN.md — Land the `worktree-phase-4-socd` branch on main and prove SOCD compiles end to end (wave 1)
+- [ ] 04-02-PLAN.md — Curated module registry and catalog-version-scoped capability gating (wave 2)
+- [ ] 04-03-PLAN.md — Record the SOCD module version with every build (wave 2)
+- [ ] 04-04-PLAN.md — Module-hook startup assertion and `mode/m256wh` compile verification (wave 3)
+- [ ] 04-05-PLAN.md — Hardware verification on `mode/m256wh` — the phase gate (wave 4)
+
 **UI hint**: yes
 
 **Scope notes** (Phase 4 is planned in the most detail; `/gsd-plan-phase 4` decomposes these):
@@ -211,7 +219,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → **4** → 5 → 6
 | 1. Catalog and Read-Only UI | n/a (pre-GSD) | Complete | - |
 | 2. Saved Visual Configurations | n/a (pre-GSD) | Complete | - |
 | 3. Generation and Server Builds | n/a (pre-GSD) | Complete | 2026-08-09 |
-| 4. Verified SOCD Support | 0/TBD | Not started | - |
+| 4. Verified SOCD Support | 0/5 | Planned | - |
 | 5. Hardening and Scale | 0/TBD | Not started | - |
 | 6. Browser Flashing Research and Rollout | 0/TBD | Not started | - |
 
