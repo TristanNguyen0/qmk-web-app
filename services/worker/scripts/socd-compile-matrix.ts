@@ -7,19 +7,28 @@
  * community module is added — the module is extra flash and an extra translation unit.
  * So "SOCD works here" is a claim this script has to earn, per keyboard, per policy.
  *
- * It compiles every (verified keyboard × published policy) combination for real, in the
- * isolated build image, and fails if any of them does not produce firmware. Nothing may
- * be added as a `verifiedFor` record until it passes here.
+ * It compiles every (fixture-table keyboard × published policy) combination for real,
+ * in the isolated build image, and fails if any of them does not produce firmware.
+ * Nothing may be added as a `verifiedFor` record until it passes here — but the
+ * converse is deliberately NOT required: a keyboard may have a fixture and be
+ * compiled here before it is recorded as verified. That is what lets a candidate
+ * (mode/m256wh, this phase) earn its record instead of needing one to be compiled at
+ * all — the chicken-and-egg D-06 exists to avoid. The guard that IS enforced runs the
+ * other direction: any keyboard the registry already records as compile-verified for
+ * this catalog version must have a fixture, checked below.
  *
  * Usage:
  *   node --experimental-strip-types services/worker/scripts/socd-compile-matrix.ts <published-catalog-dir>
  */
 import { resolve } from 'node:path';
 import {
+  SOCD_HORIZONTAL_PAIRS,
   SOCD_POLICIES,
+  SOCD_VERTICAL_PAIRS,
+  parseConfiguration,
   socdVerifiedKeyboards,
-  validateConfiguration,
   type Catalog,
+  type Configuration,
   type SupportedCatalogKeyboard,
 } from '@qmk-web-app/domain';
 import { openPublishedCatalog } from '@qmk-web-app/qmk-catalog';
@@ -69,19 +78,181 @@ const FIXTURES: Record<
     directionalKeys: { up: 2, down: 14, left: 13, right: 15 },
     directionalKeycodes: { up: 'KC_W', down: 'KC_S', left: 'KC_A', right: 'KC_D' },
   },
+  // First ARM/STM32 fixture (D-06). Base keys mapped in index order from each
+  // position's `label` in catalogs/0.33.13-1/keyboards/0009.json's
+  // mode/m256wh -> LAYOUT_65_ansi_blocker entry (67 positions), parsed this
+  // session — never invented (claude.md rule 2). W/A/S/D pair per RESEARCH.md's
+  // verified position indices; the arrow cluster is present on the same layout
+  // (up 56, left 64, down 65, right 66) and available for a future fixture.
+  'mode/m256wh': {
+    layoutId: 'LAYOUT_65_ansi_blocker',
+    baseKeys: [
+      /*  0 */ 'KC_ESCAPE',
+      /*  1 */ 'KC_1',
+      /*  2 */ 'KC_2',
+      /*  3 */ 'KC_3',
+      /*  4 */ 'KC_4',
+      /*  5 */ 'KC_5',
+      /*  6 */ 'KC_6',
+      /*  7 */ 'KC_7',
+      /*  8 */ 'KC_8',
+      /*  9 */ 'KC_9',
+      /* 10 */ 'KC_0',
+      /* 11 */ 'KC_MINUS',
+      /* 12 */ 'KC_EQUAL',
+      /* 13 */ 'KC_BACKSPACE',
+      /* 14 */ 'KC_DELETE',
+      /* 15 */ 'KC_TAB',
+      /* 16 */ 'KC_Q',
+      /* 17 */ 'KC_W',
+      /* 18 */ 'KC_E',
+      /* 19 */ 'KC_R',
+      /* 20 */ 'KC_T',
+      /* 21 */ 'KC_Y',
+      /* 22 */ 'KC_U',
+      /* 23 */ 'KC_I',
+      /* 24 */ 'KC_O',
+      /* 25 */ 'KC_P',
+      /* 26 */ 'KC_LEFT_BRACKET',
+      /* 27 */ 'KC_RIGHT_BRACKET',
+      /* 28 */ 'KC_BACKSLASH',
+      /* 29 */ 'KC_PAGE_UP',
+      /* 30 */ 'KC_CAPS_LOCK',
+      /* 31 */ 'KC_A',
+      /* 32 */ 'KC_S',
+      /* 33 */ 'KC_D',
+      /* 34 */ 'KC_F',
+      /* 35 */ 'KC_G',
+      /* 36 */ 'KC_H',
+      /* 37 */ 'KC_J',
+      /* 38 */ 'KC_K',
+      /* 39 */ 'KC_L',
+      /* 40 */ 'KC_SEMICOLON',
+      /* 41 */ 'KC_QUOTE',
+      /* 42 */ 'KC_ENTER',
+      /* 43 */ 'KC_PAGE_DOWN',
+      /* 44 */ 'KC_LEFT_SHIFT',
+      /* 45 */ 'KC_Z',
+      /* 46 */ 'KC_X',
+      /* 47 */ 'KC_C',
+      /* 48 */ 'KC_V',
+      /* 49 */ 'KC_B',
+      /* 50 */ 'KC_N',
+      /* 51 */ 'KC_M',
+      /* 52 */ 'KC_COMMA',
+      /* 53 */ 'KC_DOT',
+      /* 54 */ 'KC_SLASH',
+      /* 55 */ 'KC_RIGHT_SHIFT',
+      /* 56 */ 'KC_UP',
+      /* 57 */ 'KC_END',
+      /* 58 */ 'KC_LEFT_CTRL',
+      /* 59 */ 'KC_LEFT_GUI',
+      /* 60 */ 'KC_LEFT_ALT',
+      /* 61 */ 'KC_SPACE',
+      /* 62 */ 'KC_RIGHT_ALT',
+      /* 63 */ 'KC_RIGHT_CTRL',
+      /* 64 */ 'KC_LEFT',
+      /* 65 */ 'KC_DOWN',
+      /* 66 */ 'KC_RIGHT',
+    ],
+    directionalKeys: { up: 17, down: 32, left: 31, right: 33 },
+    directionalKeycodes: { up: 'KC_W', down: 'KC_S', left: 'KC_A', right: 'KC_D' },
+  },
 };
 
-// The registry's verifiedFor records are what this script's own runs earn (D-02); the
-// keyboards it is about to (re-)verify for this catalog version are exactly the ones
-// already recorded for it.
+// The guard runs in the direction that keeps a registry claim honest: any keyboard
+// already recorded compile-verified for this catalog version (D-02) must have a
+// fixture. It does NOT run the other way — a fixture is allowed to exist for a
+// keyboard the registry has not recorded yet, which is exactly how a candidate earns
+// its record (see the file header).
 const verifiedKeyboards = socdVerifiedKeyboards(published.index.catalogVersion);
-
 const missingFixtures = [...verifiedKeyboards].filter((id) => !FIXTURES[id]);
 if (missingFixtures.length > 0) {
   console.error(
     `these keyboards claim SOCD verification but have no compile fixture: ${missingFixtures.join(', ')}`,
   );
   process.exit(1);
+}
+
+// The build loop itself iterates the fixture table's own keys — every candidate this
+// script knows how to build, verified or not — rather than the registry's verified
+// set. That is the other half of breaking the chicken-and-egg: without it, a
+// candidate keyboard could never be compiled in the first place, since nothing would
+// ever add it to `verifiedKeyboards` before this script ran.
+const candidateKeyboards = Object.keys(FIXTURES);
+
+/**
+ * Structural validation for a matrix-built configuration — deliberately NOT the
+ * public `validateConfiguration()` from `@qmk-web-app/domain`. That function's SOCD
+ * path gates on `MODULE_REGISTRY`'s `verifiedFor` list (packages/domain/src/validate.ts),
+ * which is exactly the chicken-and-egg this script exists to break: a candidate
+ * keyboard must be compilable *before* it earns a `verifiedFor` record, but the
+ * public function refuses to build a configuration for a keyboard that is not
+ * already in that list. Every OTHER structural guarantee `validateConfiguration`
+ * provides is kept here — schema shape (via the same exported `parseConfiguration`),
+ * layout/position validity, opposing-pair matching, and base-layer binding agreement
+ * — so a bug in a fixture still fails loudly. Only the registry capability gate
+ * itself is intentionally not re-derived; this script's own successful run is what
+ * later earns that gate's entry (Task 3), not a precondition for reaching it.
+ */
+function validateForMatrix(
+  input: unknown,
+  catalog: Catalog,
+  layout: SupportedCatalogKeyboard['layouts'][number],
+): Configuration {
+  const configuration = parseConfiguration(input);
+
+  if (configuration.catalogVersion !== catalog.catalogVersion) {
+    throw new Error(
+      `configuration targets catalog ${configuration.catalogVersion}, expected ${catalog.catalogVersion}`,
+    );
+  }
+  if (configuration.qmkCommit !== catalog.qmkCommit) {
+    throw new Error(`configuration targets QMK commit ${configuration.qmkCommit}, expected ${catalog.qmkCommit}`);
+  }
+
+  const validPositions = new Set(layout.positions.map((p) => p.index));
+  for (const layer of configuration.layers) {
+    for (const position of Object.keys(layer.bindings)) {
+      if (!validPositions.has(Number(position))) {
+        throw new Error(`position ${position} does not exist in layout ${layout.name}`);
+      }
+    }
+  }
+
+  const socd = configuration.socd;
+  if (!socd?.enabled) {
+    throw new Error('matrix fixtures must enable socd');
+  }
+
+  for (const [direction, position] of Object.entries(socd.directionalKeys)) {
+    if (!validPositions.has(position)) {
+      throw new Error(`socd.directionalKeys.${direction} = ${position} does not exist in layout ${layout.name}`);
+    }
+  }
+
+  const { up, down, left, right } = socd.directionalKeycodes;
+  if (!SOCD_VERTICAL_PAIRS.some(([a, b]) => a === up && b === down)) {
+    throw new Error(
+      `${up} and ${down} are not an opposing vertical pair; expected one of ${SOCD_VERTICAL_PAIRS.map((p) => p.join('/')).join(', ')}`,
+    );
+  }
+  if (!SOCD_HORIZONTAL_PAIRS.some(([a, b]) => a === left && b === right)) {
+    throw new Error(
+      `${left} and ${right} are not an opposing horizontal pair; expected one of ${SOCD_HORIZONTAL_PAIRS.map((p) => p.join('/')).join(', ')}`,
+    );
+  }
+
+  const baseLayer = configuration.layers.find((l) => l.index === 0);
+  for (const [direction, position] of Object.entries(socd.directionalKeys)) {
+    const expected = socd.directionalKeycodes[direction as keyof typeof socd.directionalKeycodes];
+    const binding = baseLayer?.bindings[String(position)];
+    if (!binding || binding.kind !== 'keycode' || binding.keycode !== expected) {
+      throw new Error(`socd.directionalKeys.${direction} must be bound to ${expected} on the base layer`);
+    }
+  }
+
+  return configuration;
 }
 
 const sandbox = new DockerSandbox({
@@ -97,7 +268,7 @@ console.log(`catalog ${published.index.catalogVersion}\n`);
 let buildCounter = 0;
 const failures: string[] = [];
 
-for (const keyboardId of verifiedKeyboards) {
+for (const keyboardId of candidateKeyboards) {
   const fixture = FIXTURES[keyboardId]!;
   const entry = published.getKeyboard(keyboardId);
   if (!entry?.supported) {
@@ -160,7 +331,8 @@ for (const keyboardId of verifiedKeyboards) {
     };
 
     process.stdout.write(`${label}… `);
-    const { configuration, keyboard } = validateConfiguration(input, { catalog });
+    const configuration = validateForMatrix(input, catalog, layout);
+    const keyboard = entry as SupportedCatalogKeyboard;
     const result = await runBuild({
       buildId,
       configuration,
@@ -176,7 +348,7 @@ for (const keyboardId of verifiedKeyboards) {
       continue;
     }
     console.log(
-      `ok — ${result.artifact.byteSize} bytes, sha256 ${result.artifact.sha256.slice(0, 16)}…, ${(result.durationMs / 1000).toFixed(1)}s`,
+      `ok — .${result.artifact.extension}, ${result.artifact.byteSize} bytes, sha256 ${result.artifact.sha256.slice(0, 16)}…, ${(result.durationMs / 1000).toFixed(1)}s`,
     );
   }
 }
@@ -187,5 +359,5 @@ if (failures.length > 0) {
   process.exit(1);
 }
 console.log(
-  `SOCD compile matrix passed: ${buildCounter} builds across ${verifiedKeyboards.size} keyboard(s) and ${SOCD_POLICIES.length} policies.`,
+  `SOCD compile matrix passed: ${buildCounter} builds across ${candidateKeyboards.length} keyboard(s) and ${SOCD_POLICIES.length} policies.`,
 );
