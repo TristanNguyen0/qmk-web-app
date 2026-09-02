@@ -12,7 +12,7 @@
  * Usage: node --experimental-strip-types services/worker/scripts/smoke-build.ts <catalog.json>
  */
 import { resolve } from 'node:path';
-import { validateConfiguration, type Catalog } from '@qmk-web-app/domain';
+import { MODULE_REGISTRY, validateConfiguration, type Catalog } from '@qmk-web-app/domain';
 import { openPublishedCatalog } from '@qmk-web-app/qmk-catalog';
 import { GENERATOR_VERSION } from '@qmk-web-app/qmk-generator';
 import { DockerSandbox } from '@qmk-web-app/qmk-sandbox';
@@ -124,6 +124,7 @@ console.log(`  valid: ${configuration.layers.length} layers, ${configuration.mac
 const sandbox = new DockerSandbox({
   imageRef: buildImageRef(manifest),
   qmkSourcePath: qmkSourcePath(manifest),
+  minModuleHookApiVersion: MODULE_REGISTRY['qmkweb/socd_cleaner'].minimumHookApiVersion,
 });
 await sandbox.verify();
 console.log('  sandbox verified');

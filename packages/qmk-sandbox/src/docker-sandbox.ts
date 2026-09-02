@@ -41,6 +41,44 @@ export interface DockerSandboxOptions {
   gid?: number;
   limits?: Partial<SandboxLimits>;
   dockerBinary?: string;
+  /**
+   * The curated module registry's declared minimum community-module hook API
+   * version (D-04). When supplied, `verify()` asserts the pinned tree offers a
+   * hook API at least this high through the existing verify-env checks
+   * dictionary — mirroring the userspace-mechanism assertion ADR 0003 already
+   * requires, not a parallel check. Absent when the caller has no module
+   * requirement. This package stays free of a workspace dependency on
+   * `@qmk-web-app/domain`: the value is supplied by callers, never imported here.
+   */
+  minModuleHookApiVersion?: string;
+}
+
+/** Three dot-separated non-negative integers, nothing else. */
+const MODULE_HOOK_API_VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
+
+/**
+ * Validates the shape of a module-hook API version before it can reach the
+ * verify-env argument vector — three dot-separated non-negative integers,
+ * nothing else (claude.md rule 4: no free-form value reaches a container
+ * argument).
+ */
+export function assertValidModuleHookApiVersion(version: string): void {
+  if (!MODULE_HOOK_API_VERSION_PATTERN.test(version)) {
+    throw new Error(
+      `minModuleHookApiVersion must be three dot-separated non-negative integers, got ${JSON.stringify(version)}`,
+    );
+  }
+}
+
+/**
+ * Builds the verify-env argument array for an optional declared minimum
+ * module-hook API version. Pure — no docker invocation, no side effects.
+ * Returns no extra arguments when no minimum is supplied.
+ */
+export function buildVerifyEnvArgs(minModuleHookApiVersion?: string): string[] {
+  if (minModuleHookApiVersion === undefined) return [];
+  assertValidModuleHookApiVersion(minModuleHookApiVersion);
+  return ['--min-module-hook-api', minModuleHookApiVersion];
 }
 
 /**
@@ -96,12 +134,17 @@ export class DockerSandbox implements BuildSandbox {
   readonly #gid: number;
   readonly #limits: SandboxLimits;
   readonly #docker: string;
+  readonly #minModuleHookApiVersion: string | undefined;
   #cachedDigest: string | null | undefined;
 
   constructor(options: DockerSandboxOptions) {
     assertSafeHostPath(options.qmkSourcePath, 'qmkSourcePath');
+    if (options.minModuleHookApiVersion !== undefined) {
+      assertValidModuleHookApiVersion(options.minModuleHookApiVersion);
+    }
     this.#imageRef = options.imageRef;
     this.#qmkSourcePath = options.qmkSourcePath;
+    this.#minModuleHookApiVersion = options.minModuleHookApiVersion;
     // The container writes into a host-backed workspace directory, so it must run as
     // a uid that can write it. Defaulting to the worker's own uid means artifacts
     // come back owned by the worker and the workspace never needs loose permissions.
@@ -113,7 +156,10 @@ export class DockerSandbox implements BuildSandbox {
   }
 
   async verify(): Promise<void> {
-    const result = await this.run({ verb: 'verify-env', args: [] });
+    const result = await this.run({
+      verb: 'verify-env',
+      args: buildVerifyEnvArgs(this.#minModuleHookApiVersion),
+    });
     if (result.outcome !== 'succeeded') {
       throw new Error(
         `build sandbox verification failed (${result.outcome}): ${result.stderr || result.stdout}`,

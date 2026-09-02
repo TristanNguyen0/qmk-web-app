@@ -21,6 +21,7 @@ import { resolve } from 'node:path';
 import pg from 'pg';
 import { FilesystemArtifactStore } from '@qmk-web-app/artifact-store';
 import { PostgresBuildStore } from '@qmk-web-app/build-queue';
+import { MODULE_REGISTRY } from '@qmk-web-app/domain';
 import { DockerSandbox } from '@qmk-web-app/qmk-sandbox';
 import { loadPublishedCatalogs } from './catalog-provider.ts';
 import { QueueRunner, type QueueRunnerEvent } from './queue-runner.ts';
@@ -73,6 +74,9 @@ mkdirSync(artifactDir, { recursive: true, mode: 0o750 });
 const sandbox = new DockerSandbox({
   imageRef: buildImageRef(manifest),
   qmkSourcePath: sourcePath,
+  // D-04: refuse to start against a pinned tree that cannot host the curated
+  // module — the minimum comes from the registry entry, never a literal.
+  minModuleHookApiVersion: MODULE_REGISTRY['qmkweb/socd_cleaner'].minimumHookApiVersion,
 });
 
 try {

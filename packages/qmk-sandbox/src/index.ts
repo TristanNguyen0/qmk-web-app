@@ -7,5 +7,5 @@ export type {
   SandboxRunResult,
   SandboxVerb,
 } from './types.ts';
-export { DockerSandbox, DEFAULT_LIMITS } from './docker-sandbox.ts';
+export { DockerSandbox, DEFAULT_LIMITS, assertValidModuleHookApiVersion, buildVerifyEnvArgs } from './docker-sandbox.ts';
 export type { DockerSandboxOptions } from './docker-sandbox.ts';

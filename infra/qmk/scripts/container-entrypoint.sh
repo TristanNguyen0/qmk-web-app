@@ -54,10 +54,43 @@ case "${verb}" in
     ;;
   verify-env)
     # Startup assertion that the mounted tree is a usable pinned QMK checkout with
-    # the userspace mechanism this app depends on (ADR 0003).
-    exec python3 - <<'PY'
-import json, os, sys
+    # the userspace mechanism this app depends on (ADR 0003), plus (D-04) that it
+    # offers a community-module hook API at least as high as an optional declared
+    # minimum. Remaining arguments are the fixed vector the entrypoint already
+    # passes through — never re-parsed by a shell.
+    exec python3 - "$@" <<'PY'
+import json, os, re, sys
+
 root = '/qmk'
+
+# --min-module-hook-api <version> is the only argument this verb accepts. It is
+# already shape-validated by the caller (packages/qmk-sandbox's
+# assertValidModuleHookApiVersion) before it reaches this argument vector
+# (claude.md rule 4); parse_version below is a second, independent line of
+# defence, not the primary validation.
+args = sys.argv[1:]
+min_version_arg = None
+i = 0
+while i < len(args):
+    if args[i] == '--min-module-hook-api':
+        if i + 1 >= len(args):
+            print(json.dumps({'error': '--min-module-hook-api requires a value'}))
+            sys.exit(64)
+        min_version_arg = args[i + 1]
+        i += 2
+    else:
+        i += 1
+
+
+def parse_version(value):
+    """Three dot-separated non-negative integers, as a comparable int tuple —
+    never string comparison, so a two-digit component ranks correctly."""
+    match = re.fullmatch(r'(\d+)\.(\d+)\.(\d+)', value)
+    if not match:
+        return None
+    return tuple(int(part) for part in match.groups())
+
+
 checks = {
     'qmk_lib_python': os.path.isdir(os.path.join(root, 'lib', 'python', 'qmk')),
     'makefile': os.path.isfile(os.path.join(root, 'Makefile')),
@@ -75,7 +108,37 @@ try:
     os.unlink(os.path.join(root, '.qmk-web-app-write-probe'))
 except OSError:
     checks['qmk_tree_read_only'] = True
-print(json.dumps({'checks': checks, 'ok': all(checks.values())}, sort_keys=True))
+
+# The new key (D-04): the highest community-module hook API version the pinned
+# tree offers, compared component-wise as integers against an optional declared
+# minimum. Absent minimum -> true; the catalog-extraction and compile verbs have
+# no module requirement.
+highest_hook_version = None
+hook_dir = os.path.join(root, 'data', 'constants', 'module_hooks')
+try:
+    for name in os.listdir(hook_dir):
+        stem = name[:-len('.hjson')] if name.endswith('.hjson') else name
+        parsed = parse_version(stem)
+        if parsed is None:
+            continue
+        if highest_hook_version is None or parsed > highest_hook_version:
+            highest_hook_version = parsed
+except OSError:
+    highest_hook_version = None
+
+parsed_min = parse_version(min_version_arg) if min_version_arg is not None else None
+checks['module_hook_api_version_ok'] = min_version_arg is None or (
+    parsed_min is not None and highest_hook_version is not None and highest_hook_version >= parsed_min
+)
+
+# Observability only — never folded into the all-true aggregate that decides the
+# exit code. Only booleans in `checks` decide `ok`.
+module_hook_api = {
+    'highest': '.'.join(str(part) for part in highest_hook_version) if highest_hook_version else None,
+    'minimumRequested': min_version_arg,
+}
+
+print(json.dumps({'checks': checks, 'ok': all(checks.values()), 'moduleHookApi': module_hook_api}, sort_keys=True))
 sys.exit(0 if all(checks.values()) else 1)
 PY
     ;;
