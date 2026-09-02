@@ -43,6 +43,9 @@ export interface BuildSummary {
   catalogVersion: string;
   qmkCommit: string;
   generatorVersion: string;
+  /** D-03: the SOCD module version that produced this build's firmware, mirroring
+   * `generatorVersion`. Null when this build's configuration did not enable SOCD. */
+  socdModuleVersion: string | null;
   /** Present only once the build has succeeded and the artifact has not expired. */
   artifact: {
     filename: string;
@@ -139,6 +142,13 @@ export interface CompleteBuildArgs {
   buildImageRef: string;
   buildImageDigest: string | null;
   generatorVersion: string;
+  /**
+   * D-03: the SOCD module version that produced this build's firmware, sourced from
+   * `SOCD_MODULE_VERSION` in `@qmk-web-app/qmk-socd-module` via the worker's
+   * `run-build.ts` result — never a caller-supplied value. `socdModuleVersion` is
+   * null when this build's configuration did not enable SOCD.
+   */
+  socdModuleVersion: string | null;
 }
 
 export interface FailBuildArgs {

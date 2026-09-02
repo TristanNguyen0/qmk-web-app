@@ -71,6 +71,14 @@ export interface BuildRecord {
   catalogVersion: string;
   qmkCommit: string;
   generatorVersion: string;
+  /**
+   * The SOCD community module version that produced this build's firmware (D-03,
+   * .planning/phases/04-verified-socd-support/04-CONTEXT.md), sourced from
+   * `SOCD_MODULE_VERSION` in `@qmk-web-app/qmk-socd-module`. Null when this build's
+   * configuration did not enable SOCD, or before the build has completed — never a
+   * placeholder or an empty string.
+   */
+  socdModuleVersion: string | null;
   /** Recorded per build so a result can be reproduced (claude.md § Build isolation). */
   buildImageRef: string;
   buildImageDigest: string | null;

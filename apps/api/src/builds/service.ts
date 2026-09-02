@@ -93,6 +93,8 @@ export function prepareBuild(store: CatalogStore, args: PrepareBuildArgs): Build
     catalogVersion: configuration.catalogVersion,
     qmkCommit: configuration.qmkCommit,
     generatorVersion: GENERATOR_VERSION,
+    // Unknown until the worker completes the build (D-03); never guessed here.
+    socdModuleVersion: null,
     buildImageRef: args.environment.imageRef,
     buildImageDigest: args.environment.imageDigest,
     status: 'queued',

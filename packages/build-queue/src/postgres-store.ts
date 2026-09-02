@@ -39,6 +39,7 @@ interface BuildRow {
   catalog_version: string;
   qmk_commit: string;
   generator_version: string;
+  socd_module_version: string | null;
   build_image_ref: string;
   build_image_digest: string | null;
   status: BuildStatus;
@@ -62,6 +63,7 @@ function toRecord(row: BuildRow): BuildRecord {
     catalogVersion: row.catalog_version,
     qmkCommit: row.qmk_commit,
     generatorVersion: row.generator_version,
+    socdModuleVersion: row.socd_module_version,
     buildImageRef: row.build_image_ref,
     buildImageDigest: row.build_image_digest,
     status: row.status,
@@ -422,6 +424,7 @@ export class PostgresBuildStore implements BuildRepository, BuildQueue {
                   build_image_ref = $6,
                   build_image_digest = $7,
                   generator_version = $8,
+                  socd_module_version = $9,
                   completed_at = now(),
                   claimed_by = NULL,
                   lease_expires_at = NULL
@@ -435,6 +438,7 @@ export class PostgresBuildStore implements BuildRepository, BuildQueue {
             args.buildImageRef,
             args.buildImageDigest,
             args.generatorVersion,
+            args.socdModuleVersion,
           ],
         );
 

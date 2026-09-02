@@ -236,6 +236,7 @@ export class InMemoryBuildStore implements BuildRepository, BuildQueue {
     build.buildImageRef = args.buildImageRef;
     build.buildImageDigest = args.buildImageDigest;
     build.generatorVersion = args.generatorVersion;
+    build.socdModuleVersion = args.socdModuleVersion;
     build.completedAt = new Date().toISOString();
     this.#leases.delete(args.buildId);
     return true;
@@ -351,6 +352,7 @@ export function toSummary(
     catalogVersion: record.catalogVersion,
     qmkCommit: record.qmkCommit,
     generatorVersion: record.generatorVersion,
+    socdModuleVersion: record.socdModuleVersion,
     artifact: artifact
       ? {
           filename: artifact.originalFilename,

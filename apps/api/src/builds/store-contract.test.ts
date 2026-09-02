@@ -110,6 +110,7 @@ function buildRecord(
     catalogVersion: '0.33.13-1',
     qmkCommit: 'a'.repeat(40),
     generatorVersion: '1',
+    socdModuleVersion: null,
     buildImageRef: 'qmk-web-app/qmk-build:test',
     buildImageDigest: null,
     status: 'queued',
@@ -225,6 +226,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
           buildImageRef: 'qmk-web-app/qmk-build:test',
           buildImageDigest: null,
           generatorVersion: '1',
+          socdModuleVersion: null,
         });
 
         expect(await builds.getArtifact(build.id, ALICE)).not.toBeNull();
@@ -432,6 +434,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
             buildImageRef: 'qmk-web-app/qmk-build:0.33.13-1',
             buildImageDigest: 'sha256:' + 'c'.repeat(64),
             generatorVersion: '1',
+            socdModuleVersion: null,
           }),
         ).toBe(true);
 
@@ -444,6 +447,58 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
         const stored_artifact = await builds.getArtifact(build.id, ALICE);
         expect(stored_artifact?.sha256).toBe(artifact.sha256);
         expect(stored_artifact?.byteSize).toBe(artifact.byteSize);
+      });
+
+      it('records a SOCD module version and reports it on the summary', async () => {
+        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
+        await toUploading(builds, build.id);
+
+        expect(
+          await builds.complete({
+            buildId: build.id,
+            workerId: WORKER,
+            artifact: artifactArgs(build.id),
+            outputFormat: 'hex',
+            logReference: null,
+            buildImageRef: 'qmk-web-app/qmk-build:0.33.13-1',
+            buildImageDigest: null,
+            generatorVersion: '1',
+            socdModuleVersion: '1.0.0',
+          }),
+        ).toBe(true);
+
+        const stored = await builds.get(build.id, ALICE);
+        expect(stored?.socdModuleVersion).toBe('1.0.0');
+
+        const summary = await builds.summarize(stored!, ALICE);
+        expect(summary.socdModuleVersion).toBe('1.0.0');
+      });
+
+      it('records a null SOCD module version for a build that did not enable SOCD', async () => {
+        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
+        await toUploading(builds, build.id);
+
+        expect(
+          await builds.complete({
+            buildId: build.id,
+            workerId: WORKER,
+            artifact: artifactArgs(build.id),
+            outputFormat: 'hex',
+            logReference: null,
+            buildImageRef: 'qmk-web-app/qmk-build:0.33.13-1',
+            buildImageDigest: null,
+            generatorVersion: '1',
+            socdModuleVersion: null,
+          }),
+        ).toBe(true);
+
+        const stored = await builds.get(build.id, ALICE);
+        expect(stored?.socdModuleVersion).toBeNull();
+
+        const summary = await builds.summarize(stored!, ALICE);
+        expect(summary.socdModuleVersion).toBeNull();
       });
 
       it('refuses to complete a build that has not reached uploading', async () => {
@@ -461,6 +516,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
             buildImageRef: 'x',
             buildImageDigest: null,
             generatorVersion: '1',
+            socdModuleVersion: null,
           }),
         ).toBe(false);
         expect(await builds.getArtifact(build.id, ALICE)).toBeNull();
@@ -534,6 +590,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
           buildImageRef: 'x',
           buildImageDigest: null,
           generatorVersion: '1',
+          socdModuleVersion: null,
         });
 
         const reaped = await builds.reap({ logRetentionMs: 7 * 86_400_000 });

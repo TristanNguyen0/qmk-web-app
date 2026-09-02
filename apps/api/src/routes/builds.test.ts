@@ -121,6 +121,7 @@ async function succeed(buildId: string, ownerFilename = 'crkbd_rev1_qwa_build.he
     buildImageRef: ENVIRONMENT.imageRef,
     buildImageDigest: null,
     generatorVersion: '1',
+    socdModuleVersion: null,
   });
 }
 
@@ -424,6 +425,7 @@ describe('artifact download', () => {
       buildImageRef: ENVIRONMENT.imageRef,
       buildImageDigest: null,
       generatorVersion: '1',
+      socdModuleVersion: null,
     });
 
     const res = await app.inject({
