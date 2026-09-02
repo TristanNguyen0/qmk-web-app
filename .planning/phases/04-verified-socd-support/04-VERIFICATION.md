@@ -15,18 +15,46 @@ not assumed.
 
 ## Evidence fields
 
+Both firmware images below were produced through the product's own path — not the
+`socd:matrix` compile matrix — by driving the running API and worker directly through
+the same `POST /v1/configurations` → `POST /v1/configurations/:id/builds` → poll →
+`GET /v1/builds/:id/artifact` sequence the browser UI uses (`apps/api/src/routes/configurations.ts`,
+`apps/api/src/routes/builds.ts`). Both are shared facts about the compile itself; the
+hardware-run fields (Date of run, Run by) stay `not yet run` until the Task 2 checkpoint
+records a real observation.
+
 | Field | Value |
 | --- | --- |
 | Board | `mode/m256wh` (Mode Envoy), STM32F401, `stm32-dfu` bootloader |
-| Layout id | *(not yet run)* |
-| Firmware SHA-256 | *(not yet run)* |
-| SOCD module version | *(not yet run)* |
-| Catalog version | *(not yet run — e.g. `0.33.13-1`, derived from the pinned QMK revision `0.33.13`)* |
-| QMK commit | *(not yet run)* |
-| Build id | *(not yet run)* |
-| Directional pair exercised | *(not yet run)* |
+| Layout id | `LAYOUT_65_ansi_blocker` |
+| Catalog version | `0.33.13-1` |
+| QMK commit | `332fa30e173e5b0ecc0c70ff166974b6db86525e` |
+| SOCD module version | `1.0.0` |
+| Directional pair exercised | W/A/S/D — up=position 17 (`KC_W`), left=position 31 (`KC_A`), down=position 32 (`KC_S`), right=position 33 (`KC_D`) |
 | Date of run | *(not yet run)* |
 | Run by | *(not yet run)* |
+
+### Per-policy build provenance (Task 1, produced 2026-09-02)
+
+Each build's artifact was downloaded and its SHA-256 computed independently
+(`sha256sum`); the value matched both the build record's own `artifact.sha256` and the
+`x-artifact-sha256` response header in every case — no mismatch occurred.
+
+| Policy | Build id | Configuration id | Firmware filename | Byte size | SHA-256 (build record, download header, and independently computed — all three agree) | Local artifact path |
+| --- | --- | --- | --- | --- | --- | --- |
+| `neutral` | `fe87d33c-b50f-4907-a0fc-76cfdbfd7908` | `d520791e-e9c0-44ca-b193-8a7dcfb68750` | `mode_m256wh_qwa_fe87d33cb50f4907a0fc76cfdbfd7908.bin` | 65752 bytes | `cbd0d67495a038bcfa2ab525bbfa38f5322ddab90c2ad6c88bc4e40b00741840` | `var/hardware-verification/neutral-mode_m256wh_qwa_fe87d33cb50f4907a0fc76cfdbfd7908.bin` (repo-ignored working area) |
+| `last_input_priority` | `cca5ffe7-13b9-4a6a-b056-ec5f86527d80` | `856b86c4-bcd4-42e9-87bd-3aad90439304` | `mode_m256wh_qwa_cca5ffe713b94a6ab056ec5f86527d80.bin` | 65752 bytes | `a862e816eb3157686bdfe58e2bebfb75e5aa2047b4642638ed53d37ecce1c2c3` | `var/hardware-verification/last_input_priority-mode_m256wh_qwa_cca5ffe713b94a6ab056ec5f86527d80.bin` (repo-ignored working area) |
+
+Both configurations bind a QWERTY base layer (layer 0) with the W/A/S/D positions
+overridden to the policy's SOCD module keycodes as `validateConfiguration` requires, a
+raised layer (layer 1) that leaves positions 17/31/32/33 unbound (compiles to
+`KC_TRANSPARENT`, per `packages/qmk-generator/src/generate.ts`'s layer-0-only override),
+and one macro (`Type W`, a single `tap KC_W` step) bound to position 0 on the raised
+layer, reachable by holding the layer-momentary key at position 59 (`Win`, repurposed as
+Fn for this test configuration). Both builds reached the `succeeded` terminal status
+(never `failed`, `cancelled`, or `expired`) — confirmed by polling `GET /v1/builds/:id`
+to a terminal state and by the worker's own `"message":"build succeeded"` log line for
+each build id above. `pnpm test` passed 406/406 after both builds completed.
 
 ## Per-check results
 
