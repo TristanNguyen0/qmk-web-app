@@ -172,7 +172,7 @@ export function registerCatalogRoutes(app: FastifyInstance, store: CatalogStore)
       // claude.md rule 9: only what has actually been verified is offered. A keyboard
       // that has not been through the SOCD compile matrix gets an empty policy list
       // and a reason, never an optimistic one (see packages/domain/src/socd.ts).
-      const capabilities = socdCapabilitiesFor(keyboardId);
+      const capabilities = socdCapabilitiesFor(version, keyboardId);
       return reply.send({
         apiVersion: API_VERSION,
         catalogVersion: version,

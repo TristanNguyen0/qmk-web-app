@@ -13,11 +13,7 @@ import { z } from 'zod';
 import type { Catalog, SupportedCatalogKeyboard } from './catalog.ts';
 import { configurationSchema, type Configuration } from './configuration.ts';
 import { DomainError, ERROR_CODES, type FieldError } from './errors.ts';
-import {
-  SOCD_HORIZONTAL_PAIRS,
-  SOCD_VERIFIED_KEYBOARDS,
-  SOCD_VERTICAL_PAIRS,
-} from './socd.ts';
+import { SOCD_HORIZONTAL_PAIRS, SOCD_VERTICAL_PAIRS, socdCapabilitiesFor } from './socd.ts';
 
 export interface ValidationContext {
   catalog: Catalog;
@@ -128,14 +124,20 @@ export function validateConfiguration(
     }
 
     if (socd.enabled) {
-      // Compile-verified keyboards only (claude.md § SOCD Cleaner requirement 2:
-      // "Expose SOCD only for keyboards/builds that meet its verified prerequisites").
-      // This is a capability answer, not a validation failure, so it is raised
-      // immediately rather than collected with the field errors.
-      if (!SOCD_VERIFIED_KEYBOARDS.has(configuration.keyboardId)) {
+      // Compile-verified (catalogVersion, keyboardId) combinations only (claude.md §
+      // SOCD Cleaner requirement 2: "Expose SOCD only for keyboards/builds that meet
+      // its verified prerequisites"; D-02: the registry gate is catalog-version aware,
+      // so a QMK pin bump withdraws availability until the compile matrix re-runs
+      // against the new catalog version). This reads through the same registry lookup
+      // `socdCapabilitiesFor` uses — the server never derives its own, second answer to
+      // "is this available" — and is a capability answer, not a validation failure, so
+      // it is raised immediately rather than collected with the field errors.
+      const capabilities = socdCapabilitiesFor(configuration.catalogVersion, configuration.keyboardId);
+      if (!capabilities.available) {
         throw new DomainError(
           ERROR_CODES.CAPABILITY_UNAVAILABLE,
-          'SOCD has not been compile-verified for this keyboard',
+          capabilities.reason ??
+            `SOCD has not been compile-verified for this keyboard on catalog version ${configuration.catalogVersion}`,
           [{ path: 'socd.enabled', message: 'unavailable for this keyboard' }],
         );
       }

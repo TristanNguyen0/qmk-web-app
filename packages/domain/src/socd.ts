@@ -113,19 +113,30 @@ export const SOCD_MODULE_KEYCODES: readonly string[] = Object.freeze(
 );
 
 /**
- * Keyboards on which a SOCD firmware image has actually been compiled.
- *
- * claude.md phase 4: "Enable only tested policies/keyboards", and rule 2: never invent
- * a compile target. Catalogued is a weaker claim than *known to build*, and SOCD adds a
- * community module to the build — a keyboard tight on flash can compile without it and
- * fail with it. So the list holds only what
- * `services/worker/scripts/socd-compile-matrix.ts` has actually put through the build
- * image, and everything else reports SOCD as unavailable rather than optimistically
- * offering it.
+ * `MODULE_REGISTRY` is the single source of which (catalogVersion, keyboardId) pairs
+ * have actually had a SOCD firmware image compiled (D-01, D-02). This file imports it
+ * only inside function bodies below, never at this module's own top level — that is
+ * what keeps the resulting circular import (module-registry.ts imports SOCD_POLICIES
+ * and friends from this file, for its `supportedOptions` field) safe regardless of
+ * which of the two files a given entry point (index.ts, or a test importing this file
+ * directly) happens to evaluate first. See the matching note in module-registry.ts.
  */
-export const SOCD_VERIFIED_KEYBOARDS: ReadonlySet<string> = Object.freeze(
-  new Set(['crkbd/rev1']),
-);
+import { MODULE_REGISTRY, type ModuleVerificationStrength } from './module-registry.ts';
+
+/**
+ * Keyboard ids the registry has actually verified SOCD for, at a given catalog
+ * version. Derived from `MODULE_REGISTRY.verifiedFor` on every call — this replaced an
+ * independently maintained flat set (D-02): a second, hand-kept list is exactly the
+ * drift the project's cross-checked-table discipline exists to prevent.
+ */
+export function socdVerifiedKeyboards(catalogVersion: string): ReadonlySet<string> {
+  const entry = MODULE_REGISTRY['qmkweb/socd_cleaner'];
+  return new Set(
+    entry.verifiedFor
+      .filter((record) => record.catalogVersion === catalogVersion)
+      .map((record) => record.keyboardId),
+  );
+}
 
 export interface SocdCapabilities {
   available: boolean;
@@ -134,27 +145,58 @@ export interface SocdCapabilities {
   policies: readonly { id: string; label: string; description: string }[];
   verticalPairs: readonly (readonly [string, string])[];
   horizontalPairs: readonly (readonly [string, string])[];
+  /**
+   * The matched record's verification strength — compile-only or compile-and-hardware
+   * (D-10). Present only when available. Additive: the UI does not render this, per the
+   * UI contract; it exists so the two claims stay distinguishable in the data.
+   */
+  verification?: ModuleVerificationStrength;
+}
+
+function unavailable(reason: string): SocdCapabilities {
+  return { available: false, reason, policies: [], verticalPairs: [], horizontalPairs: [] };
 }
 
 /**
- * What SOCD this keyboard can actually have. The honest answer for an unverified
- * keyboard is an empty policy list with a reason, never a hopeful one.
+ * What SOCD this keyboard can actually have, for a specific catalog version. The
+ * honest answer for an unverified (catalogVersion, keyboardId) combination is an empty
+ * policy list with a reason naming the catalog version, never a hopeful one.
+ *
+ * Availability requires an exact match against `MODULE_REGISTRY[...].verifiedFor` — no
+ * default-allow branch, no wildcard record (T-04-05). A QMK pin bump publishes a new
+ * catalog version (ADR-0001-qmk-pin: never an in-place mutation), so a keyboard that
+ * was verified under the old catalog version has no record under the new one and
+ * reports unavailable until `socd:matrix` re-runs and earns a fresh record — this is
+ * what makes REQ-socd-policy-choices clause 7 structural rather than procedural (D-02).
+ * The expected QMK commit for a match comes from the registry record itself, never
+ * from the caller — there is no third `qmkCommit` parameter to spoof.
  */
-export function socdCapabilitiesFor(keyboardId: string): SocdCapabilities {
-  if (!SOCD_VERIFIED_KEYBOARDS.has(keyboardId)) {
-    return {
-      available: false,
-      reason:
-        'SOCD has not been compile-verified for this keyboard yet. It is enabled only for keyboards that have been through the SOCD compile matrix.',
-      policies: [],
-      verticalPairs: [],
-      horizontalPairs: [],
-    };
+export function socdCapabilitiesFor(catalogVersion: string, keyboardId: string): SocdCapabilities {
+  const entry = MODULE_REGISTRY['qmkweb/socd_cleaner'];
+
+  if (!entry.offered.enabled) {
+    // D-09's phase-close switch: every keyboard is unavailable with the entry's own
+    // reason, unchanged — this does not name the catalog version because it is not a
+    // per-catalog-version fact.
+    return unavailable(entry.offered.reason ?? 'SOCD is not currently offered.');
   }
+
+  const record = entry.verifiedFor.find(
+    (r) => r.catalogVersion === catalogVersion && r.keyboardId === keyboardId,
+  );
+
+  if (!record) {
+    return unavailable(
+      `SOCD has not been compile-verified for this keyboard on catalog version ${catalogVersion} yet. ` +
+        'It is enabled only for keyboard/catalog-version combinations that have been through the SOCD compile matrix.',
+    );
+  }
+
   return {
     available: true,
     policies: SOCD_POLICIES,
     verticalPairs: SOCD_VERTICAL_PAIRS,
     horizontalPairs: SOCD_HORIZONTAL_PAIRS,
+    verification: record.verification,
   };
 }

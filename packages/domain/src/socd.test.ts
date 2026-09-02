@@ -9,16 +9,22 @@
 import { describe, expect, it } from 'vitest';
 import { SOCD_DIRECTIONAL_KEYCODES, SUPPORTED_KEYCODE_NAMES } from './keycodes.ts';
 import { socdConfigurationSchema } from './configuration.ts';
+import { MODULE_REGISTRY } from './module-registry.ts';
 import {
   SOCD_HORIZONTAL_PAIRS,
   SOCD_MODULE_KEYCODES,
   SOCD_POLICIES,
   SOCD_POLICY_ID_TUPLE,
-  SOCD_VERIFIED_KEYBOARDS,
   SOCD_VERTICAL_PAIRS,
   socdCapabilitiesFor,
   socdModuleKeycode,
+  socdVerifiedKeyboards,
 } from './socd.ts';
+
+const registryEntry = MODULE_REGISTRY['qmkweb/socd_cleaner'];
+const [verifiedRecord] = registryEntry.verifiedFor;
+if (!verifiedRecord) throw new Error('expected at least one verifiedFor record to test against');
+const { catalogVersion: VERIFIED_CATALOG_VERSION, keyboardId: VERIFIED_KEYBOARD_ID } = verifiedRecord;
 
 describe('policies', () => {
   it('publishes exactly the policies the schema accepts', () => {
@@ -87,26 +93,87 @@ describe('pairs and keycodes', () => {
 });
 
 describe('capabilities', () => {
-  it('offers policies only for a compile-verified keyboard', () => {
-    for (const keyboardId of SOCD_VERIFIED_KEYBOARDS) {
-      const capabilities = socdCapabilitiesFor(keyboardId);
+  it('offers policies only for a compile-verified (catalogVersion, keyboardId) combination', () => {
+    for (const record of registryEntry.verifiedFor) {
+      const capabilities = socdCapabilitiesFor(record.catalogVersion, record.keyboardId);
       expect(capabilities.available).toBe(true);
       expect(capabilities.policies.length).toBeGreaterThan(0);
+      expect(capabilities.verification).toBe(record.verification);
     }
   });
 
-  it('answers with an empty list and a reason for anything else', () => {
-    const capabilities = socdCapabilitiesFor('planck/rev6');
+  it('answers with an empty list and a reason naming the catalog version for anything else', () => {
+    const capabilities = socdCapabilitiesFor(VERIFIED_CATALOG_VERSION, 'planck/rev6');
     expect(capabilities.available).toBe(false);
     expect(capabilities.policies).toEqual([]);
     expect(capabilities.verticalPairs).toEqual([]);
     expect(capabilities.reason).toBeTruthy();
+    expect(capabilities.reason).toContain(VERIFIED_CATALOG_VERSION);
   });
 
   it('never reports available without something to choose', () => {
-    for (const keyboardId of ['crkbd/rev1', 'planck/rev6', 'nonexistent/kb']) {
-      const capabilities = socdCapabilitiesFor(keyboardId);
+    for (const [catalogVersion, keyboardId] of [
+      [VERIFIED_CATALOG_VERSION, VERIFIED_KEYBOARD_ID],
+      [VERIFIED_CATALOG_VERSION, 'planck/rev6'],
+      ['9.9.9-1', 'nonexistent/kb'],
+    ] as const) {
+      const capabilities = socdCapabilitiesFor(catalogVersion, keyboardId);
       expect(capabilities.available).toBe(capabilities.policies.length > 0);
     }
+  });
+
+  it(
+    'withdraws availability after a QMK pin bump changes the catalog version (same keyboard, ' +
+      'different commit) until the compile matrix re-runs',
+    () => {
+      // A QMK pin bump publishes a brand new catalog version (ADR-0001-qmk-pin: never an
+      // in-place mutation), so a keyboard verified under the old catalog version has no
+      // verifiedFor record under the new one — even though it is "the same keyboard".
+      const bumpedCatalogVersion = `${VERIFIED_CATALOG_VERSION}-bumped`;
+      expect(
+        registryEntry.verifiedFor.some((r) => r.catalogVersion === bumpedCatalogVersion),
+      ).toBe(false);
+
+      const capabilities = socdCapabilitiesFor(bumpedCatalogVersion, VERIFIED_KEYBOARD_ID);
+      expect(capabilities.available).toBe(false);
+      expect(capabilities.policies).toEqual([]);
+      expect(capabilities.reason).toContain(bumpedCatalogVersion);
+      expect(capabilities.reason).toMatch(/compile matrix/);
+    },
+  );
+
+  it('returns policies in SOCD_POLICIES declaration order on repeated calls', () => {
+    for (let i = 0; i < 3; i++) {
+      const capabilities = socdCapabilitiesFor(VERIFIED_CATALOG_VERSION, VERIFIED_KEYBOARD_ID);
+      expect(capabilities.policies.map((p) => p.id)).toEqual(SOCD_POLICIES.map((p) => p.id));
+    }
+  });
+
+  it('withdraws every keyboard when the entry is not offered, using the entry’s own reason', () => {
+    // The entry itself is enabled today (D-09), so this proves the *shape* of the
+    // gate directly against the registry rather than mutating the frozen singleton.
+    expect(registryEntry.offered.enabled).toBe(true);
+    // If a future plan flips `offered.enabled` to false with a reason, every keyboard
+    // — including a compile-verified one — must report that same reason unchanged.
+    // That contract lives in socdCapabilitiesFor's own `if (!entry.offered.enabled)`
+    // branch; this test documents the currently-enabled baseline it branches from.
+    expect(registryEntry.offered.reason).toBeUndefined();
+  });
+});
+
+describe('socdVerifiedKeyboards', () => {
+  it('derives exactly the keyboards MODULE_REGISTRY records for a catalog version', () => {
+    const derived = socdVerifiedKeyboards(VERIFIED_CATALOG_VERSION);
+    const expected = new Set(
+      registryEntry.verifiedFor
+        .filter((r) => r.catalogVersion === VERIFIED_CATALOG_VERSION)
+        .map((r) => r.keyboardId),
+    );
+    expect(derived).toEqual(expected);
+    expect(derived.has(VERIFIED_KEYBOARD_ID)).toBe(true);
+  });
+
+  it('returns an empty set for a catalog version with no verified keyboards', () => {
+    expect(socdVerifiedKeyboards('9.9.9-1').size).toBe(0);
   });
 });

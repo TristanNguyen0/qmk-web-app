@@ -22,6 +22,20 @@
  * hand-pinned copies, and `packages/qmk-socd-module/src/module.test.ts` (which may
  * import both packages) cross-checks them against `SOCD_MODULE_VERSION` and
  * `SOCD_MODULE_DIGESTS` so the two cannot drift apart silently.
+ *
+ * **A second, real circular import (`socd.ts` <-> this file), and how it stays safe:**
+ * `socd.ts`'s `socdCapabilitiesFor` reads `MODULE_REGISTRY`, and this file's
+ * `supportedOptions` field reads `socd.ts`'s frozen tables (`SOCD_POLICIES` and
+ * friends) rather than restating them. Whichever of the two files a given entry point
+ * evaluates first would, if `supportedOptions` were a plain value computed eagerly at
+ * this module's own top level, try to read the other's `const` export before that
+ * export's declaration has run — a TDZ `ReferenceError`, not just a lint smell. Below,
+ * `supportedOptions` is instead a getter, evaluated lazily on first access rather than
+ * during this module's own top-level evaluation; `socd.ts`'s only reference to
+ * `MODULE_REGISTRY` is likewise inside function bodies, not its top level. Neither side
+ * needs the other's bindings until application code actually calls into either module,
+ * by which point the whole module graph has finished loading — so the cycle is inert
+ * regardless of which file a test or another package imports first.
  */
 import { SOCD_HORIZONTAL_PAIRS, SOCD_POLICIES, SOCD_VERTICAL_PAIRS } from './socd.ts';
 
@@ -112,17 +126,37 @@ export function assertValidOfferState(offered: CuratedModuleOfferState): void {
   }
 }
 
-function frozenEntry(entry: CuratedModuleEntry): CuratedModuleEntry {
-  assertValidOfferState(entry.offered);
-  Object.freeze(entry.sourceRevision);
-  Object.freeze(entry.sourceRevision.digestedFiles);
-  Object.freeze(entry.generatedContract);
-  Object.freeze(entry.compatibilityTests);
-  Object.freeze(entry.supportedOptions);
-  Object.freeze(entry.prerequisites);
-  entry.verifiedFor.forEach((record) => Object.freeze(record));
-  Object.freeze(entry.verifiedFor);
-  Object.freeze(entry.offered);
+/**
+ * Builds a frozen entry from every field except `supportedOptions`, which is attached
+ * separately as a lazy getter (see the circular-import note above) — computed and
+ * frozen on first access rather than during this module's own evaluation.
+ */
+function buildFrozenEntry(base: Omit<CuratedModuleEntry, 'supportedOptions'>): CuratedModuleEntry {
+  assertValidOfferState(base.offered);
+  Object.freeze(base.sourceRevision);
+  Object.freeze(base.sourceRevision.digestedFiles);
+  Object.freeze(base.generatedContract);
+  Object.freeze(base.compatibilityTests);
+  Object.freeze(base.prerequisites);
+  base.verifiedFor.forEach((record) => Object.freeze(record));
+  Object.freeze(base.verifiedFor);
+  Object.freeze(base.offered);
+
+  const entry = base as CuratedModuleEntry;
+  let cachedSupportedOptions: CuratedModuleSupportedOptions | undefined;
+  Object.defineProperty(entry, 'supportedOptions', {
+    enumerable: true,
+    configurable: true,
+    get(): CuratedModuleSupportedOptions {
+      cachedSupportedOptions ??= Object.freeze({
+        policies: SOCD_POLICIES,
+        verticalPairs: SOCD_VERTICAL_PAIRS,
+        horizontalPairs: SOCD_HORIZONTAL_PAIRS,
+      });
+      return cachedSupportedOptions;
+    },
+  });
+
   return Object.freeze(entry);
 }
 
@@ -133,7 +167,7 @@ function frozenEntry(entry: CuratedModuleEntry): CuratedModuleEntry {
  */
 export const MODULE_REGISTRY: Readonly<Record<'qmkweb/socd_cleaner', CuratedModuleEntry>> =
   Object.freeze({
-    'qmkweb/socd_cleaner': frozenEntry({
+    'qmkweb/socd_cleaner': buildFrozenEntry({
       moduleId: 'qmkweb/socd_cleaner',
 
       // Mirrors @qmk-web-app/qmk-socd-module's SOCD_MODULE_VERSION and
@@ -168,14 +202,9 @@ export const MODULE_REGISTRY: Readonly<Record<'qmkweb/socd_cleaner', CuratedModu
         'pnpm socd:matrix',
       ],
 
-      // References socd.ts's frozen tables rather than restating their contents — a
-      // fourth independently maintained copy is exactly what this project's
-      // cross-checked-table discipline forbids.
-      supportedOptions: {
-        policies: SOCD_POLICIES,
-        verticalPairs: SOCD_VERTICAL_PAIRS,
-        horizontalPairs: SOCD_HORIZONTAL_PAIRS,
-      },
+      // supportedOptions is attached by buildFrozenEntry as a lazy getter over
+      // socd.ts's frozen tables — see the circular-import note at the top of this
+      // file for why it cannot be a plain field here.
 
       prerequisites: [
         "the pinned QMK tree's keymap schema supports a keymap.json \"modules\" array",

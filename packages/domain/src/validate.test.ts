@@ -48,6 +48,8 @@ function socdConfig(
     policyId?: string;
     directionalKeycodes?: Record<string, string>;
     bindings?: Record<string, unknown>;
+    catalogVersion?: string;
+    qmkCommit?: string;
   } = {},
 ): Record<string, unknown> {
   const {
@@ -255,6 +257,29 @@ describe('validateConfiguration', () => {
     );
   });
 
+  it('refuses SOCD after a QMK pin bump changes the catalog version, even for a keyboard that was compile-verified before', () => {
+    // A pin bump publishes a brand-new catalog version and commit
+    // (ADR-0001-qmk-pin: never an in-place mutation). crkbd/rev1 was compile-verified
+    // under the fixture's catalog version, but the registry has no record for this
+    // bumped one, so the same keyboard is unavailable again until socd:matrix re-runs.
+    const bumpedCatalog: Catalog = {
+      ...catalog,
+      catalogVersion: '9.9.9-1',
+      qmkCommit: 'b'.repeat(40),
+    };
+    try {
+      validateConfiguration(
+        socdConfig({ catalogVersion: '9.9.9-1', qmkCommit: 'b'.repeat(40) }),
+        { catalog: bumpedCatalog },
+      );
+      throw new Error('expected validation to fail with CAPABILITY_UNAVAILABLE');
+    } catch (error) {
+      expect(error).toBeInstanceOf(DomainError);
+      expect((error as DomainError).code).toBe(ERROR_CODES.CAPABILITY_UNAVAILABLE);
+      expect((error as DomainError).message).toContain('9.9.9-1');
+    }
+  });
+
   it('refuses directions that do not actually oppose each other', () => {
     // W against Right has no pair in the module, so it would silently do nothing.
     expectCode(
@@ -313,7 +338,7 @@ describe('validateConfiguration', () => {
     );
   });
 
-  it('rejects SOCD directional keys that are not distinct', () => {
+  it('rejects two directions sharing one position (SOCD directional keys must be distinct)', () => {
     expectCode(
       config({
         socd: {

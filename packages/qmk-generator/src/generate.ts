@@ -24,10 +24,10 @@
  */
 import {
   LIMITS,
-  SOCD_VERIFIED_KEYBOARDS,
   generatedKeymapName,
   isSupportedKeycode,
   socdModuleKeycode,
+  socdVerifiedKeyboards,
   type Binding,
   type Configuration,
   type Macro,
@@ -231,10 +231,15 @@ export function generateKeymap(options: GenerateOptions): GenerationResult {
     throw new GenerationError('configuration and catalog keyboard record disagree');
   }
   const socd = configuration.socd?.enabled ? configuration.socd : null;
-  if (socd && !SOCD_VERIFIED_KEYBOARDS.has(configuration.keyboardId)) {
+  if (socd && !socdVerifiedKeyboards(configuration.catalogVersion).has(configuration.keyboardId)) {
     // Defence in depth: validation refuses this first, but generation is the last gate
-    // before a compiler, so it does not assume validation ran (claude.md rule 9).
-    throw new GenerationError(`SOCD is not compile-verified for ${configuration.keyboardId}`);
+    // before a compiler, so it does not assume validation ran (claude.md rule 9). The
+    // registry lookup is catalog-version aware (D-02), so this also catches a
+    // configuration carrying a keyboard that was compile-verified under an older
+    // catalog version but not the one this configuration actually targets.
+    throw new GenerationError(
+      `SOCD is not compile-verified for ${configuration.keyboardId} on catalog version ${configuration.catalogVersion}`,
+    );
   }
 
   const layout = keyboard.layouts.find((l) => l.name === configuration.layoutId);

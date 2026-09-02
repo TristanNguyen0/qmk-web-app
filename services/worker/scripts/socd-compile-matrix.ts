@@ -1,5 +1,5 @@
 /**
- * The SOCD compile matrix: the evidence behind `SOCD_VERIFIED_KEYBOARDS`.
+ * The SOCD compile matrix: the evidence behind `MODULE_REGISTRY`'s `verifiedFor` records.
  *
  * claude.md § SOCD Cleaner requirement 6: "Test each selectable policy with compile
  * fixtures", and phase 4: "Enable only tested policies/keyboards". A keyboard may be
@@ -9,7 +9,7 @@
  *
  * It compiles every (verified keyboard × published policy) combination for real, in the
  * isolated build image, and fails if any of them does not produce firmware. Nothing may
- * be added to SOCD_VERIFIED_KEYBOARDS until it passes here.
+ * be added as a `verifiedFor` record until it passes here.
  *
  * Usage:
  *   node --experimental-strip-types services/worker/scripts/socd-compile-matrix.ts <published-catalog-dir>
@@ -17,7 +17,7 @@
 import { resolve } from 'node:path';
 import {
   SOCD_POLICIES,
-  SOCD_VERIFIED_KEYBOARDS,
+  socdVerifiedKeyboards,
   validateConfiguration,
   type Catalog,
   type SupportedCatalogKeyboard,
@@ -42,9 +42,9 @@ const published = openPublishedCatalog(resolve(catalogPath));
  * Where each keyboard's four directional keys live, and which layout to build.
  *
  * Positions are layout-specific facts, so they are stated per keyboard rather than
- * guessed. Adding a keyboard to SOCD_VERIFIED_KEYBOARDS means adding it here too — and
- * this script fails loudly if the two lists disagree, so a keyboard cannot be marked
- * verified without a fixture that actually exercises it.
+ * guessed. Adding a keyboard's verification record to the module registry means adding
+ * it here too — and this script fails loudly if the two lists disagree, so a keyboard
+ * cannot be marked verified without a fixture that actually exercises it.
  */
 const FIXTURES: Record<
   string,
@@ -71,7 +71,12 @@ const FIXTURES: Record<
   },
 };
 
-const missingFixtures = [...SOCD_VERIFIED_KEYBOARDS].filter((id) => !FIXTURES[id]);
+// The registry's verifiedFor records are what this script's own runs earn (D-02); the
+// keyboards it is about to (re-)verify for this catalog version are exactly the ones
+// already recorded for it.
+const verifiedKeyboards = socdVerifiedKeyboards(published.index.catalogVersion);
+
+const missingFixtures = [...verifiedKeyboards].filter((id) => !FIXTURES[id]);
 if (missingFixtures.length > 0) {
   console.error(
     `these keyboards claim SOCD verification but have no compile fixture: ${missingFixtures.join(', ')}`,
@@ -92,7 +97,7 @@ console.log(`catalog ${published.index.catalogVersion}\n`);
 let buildCounter = 0;
 const failures: string[] = [];
 
-for (const keyboardId of SOCD_VERIFIED_KEYBOARDS) {
+for (const keyboardId of verifiedKeyboards) {
   const fixture = FIXTURES[keyboardId]!;
   const entry = published.getKeyboard(keyboardId);
   if (!entry?.supported) {
@@ -182,5 +187,5 @@ if (failures.length > 0) {
   process.exit(1);
 }
 console.log(
-  `SOCD compile matrix passed: ${buildCounter} builds across ${SOCD_VERIFIED_KEYBOARDS.size} keyboard(s) and ${SOCD_POLICIES.length} policies.`,
+  `SOCD compile matrix passed: ${buildCounter} builds across ${verifiedKeyboards.size} keyboard(s) and ${SOCD_POLICIES.length} policies.`,
 );
