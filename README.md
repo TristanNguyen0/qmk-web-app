@@ -7,8 +7,9 @@ Architectural decisions live in [`docs/adr/`](docs/adr/).
 
 ## Status
 
-Phases 0 through 4 are complete: a user can select a keyboard, edit a keymap, configure verified
-SOCD behaviour, request a build, and download compiled firmware.
+Phases 0 through 3 are complete: a user can select a keyboard, edit a keymap, request a build, and
+download compiled firmware. Phase 4 has compile-verified SOCD support; on-hardware verification is
+still outstanding.
 
 | Phase | State |
 | --- | --- |
@@ -16,7 +17,7 @@ SOCD behaviour, request a build, and download compiled firmware.
 | 1 — catalog and read-only UI | **Done.** 3,748 keyboards published, read API, visual layout renderer, unsupported-state UX |
 | 2 — saved visual configurations | **Done.** Postgres persistence, revisions, anonymous sessions, layer editor, structured macros, undo/redo, autosave |
 | 3 — generation and server builds | **Done.** Queue, isolated worker, artifact storage, build API, quotas, retention, download from the editor |
-| 4 — verified SOCD support | **Done.** First-party community module ([ADR 0005](docs/adr/0005-socd-is-a-first-party-community-module.md)), two policies, host-run behavioural tests, real compile matrix |
+| 4 — verified SOCD support | **In progress.** SOCD ships as a first-party community module ([ADR 0005](docs/adr/0005-socd-is-a-first-party-community-module.md)). Both policies, `neutral` and `last_input_priority`, are published. `crkbd/rev1` is compile-verified through the real isolated build image by the SOCD compile matrix. No board has yet been proven on physical hardware; evidence will live in [`04-VERIFICATION.md`](.planning/phases/04-verified-socd-support/04-VERIFICATION.md). |
 | 5–6 — hardening, flashing | Not started |
 
 ## What works today
