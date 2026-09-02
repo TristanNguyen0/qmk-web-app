@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 current_phase: 04
 current_phase_name: Verified SOCD Support
 status: executing
-stopped_at: Completed 04-02-PLAN.md
-last_updated: "2026-09-02T19:26:29.347Z"
+stopped_at: Completed 04-03-PLAN.md
+last_updated: "2026-09-02T19:37:41.742Z"
 last_activity: 2026-09-02
 last_activity_desc: Phase 04 execution started
-state_head: 02f960a440ef501cecb07f6e070eb6c7c15b7893
+state_head: e0473d45b3409938a73f447c39308f64d8cc9dc7
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 5
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ never guessed.
 ## Current Position
 
 Phase: 04 (Verified SOCD Support) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-09-02 — Phase 04 execution started
 
@@ -52,6 +52,7 @@ No GSD-tracked executions yet — Phases 0–3 predate this planning directory.
 |------|----------|-------|-------|
 | Phase 04 P01 | 25 min | 3 tasks | 70 files |
 | Phase 04 P02 | 19min | 3 tasks | 13 files |
+| Phase 04 P03 | 10min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -78,6 +79,8 @@ No GSD-tracked executions yet — Phases 0–3 predate this planning directory.
 - [Phase 04]: Landed worktree-phase-4-socd (683270f) onto main via deterministic branch-diff conflict resolution; also gitignored .gsd/ and .planning/*.lock alongside .claude/ — Same runtime-tooling-state leak rationale the plan applies to .claude/
 - [Phase 04]: Broke a real circular ES-module import (socd.ts <-> module-registry.ts) with a lazily-computed, self-caching getter for supportedOptions instead of restructuring ownership — Eager top-level evaluation would throw a TDZ ReferenceError whenever socd.ts is evaluated before module-registry.ts; verified safe against the worst-case entry order
 - [Phase 04]: validate.ts now calls socdCapabilitiesFor directly instead of re-deriving its own registry lookup — Keeps exactly one source of truth for SOCD availability between the API route and the server-side validator
+- [Phase 04]: socdModuleVersion is required (never optional) on BuildRecord/CompleteBuildArgs, mirroring the outputFormat/logReference/failureCode 'known eventually, null until then' pattern rather than allowing silent omission
+- [Phase 04]: Extended packages/domain/src/build.ts's BuildRecord outside the plan's declared files (Rule 3) because memory-store.ts's completion path assigns directly onto the domain record, the same way it already assigns generatorVersion
 
 ### Pending Todos
 
@@ -116,8 +119,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-02T19:26:29.329Z
-Stopped at: Completed 04-02-PLAN.md
+Last session: 2026-09-02T19:37:41.719Z
+Stopped at: Completed 04-03-PLAN.md
 complete with delivered scope; Phase 4 is current and unplanned.
 Resume file: None
 
