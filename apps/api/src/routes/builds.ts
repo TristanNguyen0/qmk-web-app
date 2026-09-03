@@ -15,13 +15,41 @@ import { DomainError, ERROR_CODES } from '@qmk-web-app/domain';
 import type { CatalogStore } from '../catalog-store.ts';
 import type { ConfigurationRepository } from '../configurations/types.ts';
 import { API_VERSION, sendBadRequest, sendDomainError, sendNotFound } from '../errors.ts';
-import {
-  assertWithinQuota,
-  prepareBuild,
-  IDEMPOTENCY_KEY_RE,
-  type BuildEnvironment,
-} from '../builds/service.ts';
-import type { BuildRepository } from '@qmk-web-app/build-queue';
+import { prepareBuild, IDEMPOTENCY_KEY_RE, type BuildEnvironment } from '../builds/service.ts';
+import type { BuildAdmissionCap, BuildRepository } from '@qmk-web-app/build-queue';
+
+/**
+ * The three admission-rejection strings a caller can see. Exported so tests can
+ * compare against these rather than hard-coding prose, and so a future call site
+ * reuses the exact wording rather than drifting from it.
+ *
+ * `globalCapacityMessage` deliberately says nothing about the caller's own build
+ * count or any personal quota — the global cap is not the caller's doing, and telling
+ * them otherwise would misattribute the rejection (claude.md § Build isolation and
+ * security).
+ */
+export function globalCapacityMessage(): string {
+  return 'the build queue is full; try again shortly';
+}
+
+export function ownerConcurrencyMessage(observed: number): string {
+  return `you already have ${observed} builds queued or running; wait for one to finish or cancel it`;
+}
+
+export function ownerHourlyMessage(): string {
+  return 'you have reached the hourly build limit; try again later';
+}
+
+function admissionRejectionMessage(cap: BuildAdmissionCap, observed: number): string {
+  switch (cap) {
+    case 'global_active':
+      return globalCapacityMessage();
+    case 'owner_active':
+      return ownerConcurrencyMessage(observed);
+    case 'owner_hourly':
+      return ownerHourlyMessage();
+  }
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MAX_PAGE_SIZE = 100;
@@ -69,8 +97,6 @@ export function registerBuildRoutes(app: FastifyInstance, options: BuildRoutesOp
       if (!configuration) return sendNotFound(reply, 'no such configuration');
 
       try {
-        await assertWithinQuota(builds, request.ownerId);
-
         const record = prepareBuild(store, {
           configuration,
           ownerId: request.ownerId,
@@ -78,14 +104,21 @@ export function registerBuildRoutes(app: FastifyInstance, options: BuildRoutesOp
           environment: options.environment,
         });
 
-        const { build, created } = await builds.create(record);
-        const summary = await builds.summarize(build, request.ownerId);
+        const result = await builds.create(record);
+        if (result.outcome === 'rejected') {
+          throw new DomainError(
+            ERROR_CODES.BUILD_QUEUE_LIMITED,
+            admissionRejectionMessage(result.cap, result.observed),
+          );
+        }
+
+        const summary = await builds.summarize(result.build, request.ownerId);
 
         // 200 on a replay makes the retry visible to the client rather than looking
         // like a second build was accepted.
         return reply
-          .code(created ? 201 : 200)
-          .header('location', `/v1/builds/${build.id}`)
+          .code(result.outcome === 'created' ? 201 : 200)
+          .header('location', `/v1/builds/${result.build.id}`)
           .send({ apiVersion: API_VERSION, build: summary });
       } catch (error) {
         if (error instanceof DomainError) return sendDomainError(reply, error);

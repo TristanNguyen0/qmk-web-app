@@ -56,14 +56,36 @@ export interface BuildSummary {
   } | null;
 }
 
-export interface CreateBuildResult {
-  build: BuildRecord;
-  /**
-   * False when an existing build was returned for the same idempotency key. The route
-   * uses this to answer 200 instead of 201, so a retried request is visibly a retry.
-   */
-  created: boolean;
-}
+/**
+ * claude.md § Build isolation and security: "Limit concurrent builds per user/IP/
+ * session and globally." The concurrency limit is the one that protects the workers;
+ * the hourly limit is what stops a session from cycling through them all day; the
+ * global limit is what stops any number of sessions, each individually within their
+ * own allowance, from burying the single build host together.
+ *
+ * Which admission predicate rejected a build request. `global_active` is the
+ * queue-depth cap shared by every owner; `owner_active` and `owner_hourly` are the two
+ * per-owner caps. Named so the caller can build a specific, user-safe message without
+ * re-deriving which limit bit from raw numbers.
+ */
+export type BuildAdmissionCap = 'global_active' | 'owner_active' | 'owner_hourly';
+
+/**
+ * The outcome of a build-creation request, decided by one admission transaction
+ * (`BuildRepository.create`). Three shapes, not a boolean, because "was this new" is
+ * not the only question a caller must answer:
+ *
+ *  - `created` — the build was accepted and inserted.
+ *  - `replayed` — an existing build for this `(ownerId, idempotencyKey)` was found; no
+ *    cap was consulted, because a retry must never become a rejection.
+ *  - `rejected` — one of the three admission caps was at or over its limit. `cap`
+ *    names which one (checked in order: global first, since a global rejection is not
+ *    the caller's doing), `observed` is the count that was at or over `limit`.
+ */
+export type CreateBuildResult =
+  | { outcome: 'created'; build: BuildRecord }
+  | { outcome: 'replayed'; build: BuildRecord }
+  | { outcome: 'rejected'; cap: BuildAdmissionCap; observed: number; limit: number };
 
 export type CancelOutcome =
   /** Was `queued`; moved straight to `cancelled`. */
@@ -75,8 +97,12 @@ export type CancelOutcome =
 
 export interface BuildRepository {
   /**
-   * Idempotent on `(ownerId, idempotencyKey)`. Concurrent duplicate submissions must
-   * result in exactly one build, with both callers seeing it.
+   * Admission is the repository's responsibility, not the caller's. Idempotent on
+   * `(ownerId, idempotencyKey)` — concurrent duplicate submissions must result in
+   * exactly one build, with both callers seeing it — and, before any new row is
+   * inserted, the single transaction that decides this also checks the global
+   * queue-depth cap and both per-owner caps, so a caller never needs a separate
+   * pre-flight quota check that could race with this one.
    */
   create(record: BuildRecord): Promise<CreateBuildResult>;
 
@@ -104,6 +130,12 @@ export interface BuildRepository {
 
   /** Builds this owner has queued or in flight. Enforces the concurrency quota. */
   countActiveForOwner(ownerId: string): Promise<number>;
+
+  /**
+   * Builds queued or in flight across every owner — the queue-depth signal. Enforces
+   * the global admission cap and doubles as the telemetry gauge's data source.
+   */
+  countActiveGlobal(): Promise<number>;
 
   /** Builds this owner requested since `since`. Enforces the rate quota. */
   countRequestedSince(ownerId: string, since: Date): Promise<number>;

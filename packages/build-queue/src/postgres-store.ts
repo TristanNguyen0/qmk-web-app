@@ -16,9 +16,10 @@
  */
 import type { Pool, PoolClient } from 'pg';
 import type { BuildRecord, BuildStatus, Configuration } from '@qmk-web-app/domain';
-import { assertTransition, isTerminal } from '@qmk-web-app/domain';
+import { assertTransition, BUILD_LIMITS, isTerminal } from '@qmk-web-app/domain';
 import { toSummary } from './memory-store.ts';
 import type {
+  BuildAdmissionCap,
   BuildQueue,
   BuildRepository,
   BuildSummary,
@@ -30,6 +31,9 @@ import type {
   ListPage,
   ReapResult,
 } from './types.ts';
+
+/** Non-terminal statuses that occupy a slot in the global and per-owner queue-depth caps. */
+const ACTIVE_STATUSES = ['queued', 'preparing', 'building', 'uploading'] as const;
 
 interface BuildRow {
   id: string;
@@ -110,47 +114,149 @@ export class PostgresBuildStore implements BuildRepository, BuildQueue {
   // ---------------------------------------------------------------- repository
 
   async create(record: BuildRecord): Promise<CreateBuildResult> {
-    // DO NOTHING + a second read, rather than checking first: the unique index is what
-    // makes two simultaneous submissions of one idempotency key produce one build.
-    const inserted = await this.#pool.query<BuildRow>(
-      `INSERT INTO builds
-         (id, configuration_id, configuration_revision, owner_id, catalog_version,
-          qmk_commit, generator_version, build_image_ref, build_image_digest, status,
-          idempotency_key, requested_at, attempt_count)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-       ON CONFLICT (owner_id, idempotency_key) DO NOTHING
-       RETURNING *`,
-      [
-        record.id,
-        record.configurationId,
-        record.configurationRevision,
-        record.ownerId,
-        record.catalogVersion,
-        record.qmkCommit,
-        record.generatorVersion,
-        record.buildImageRef,
-        record.buildImageDigest,
-        record.status,
-        record.idempotencyKey,
-        record.requestedAt,
-        record.attemptCount,
-      ],
-    );
+    return this.#transaction(async (client) => {
+      // Transaction-scoped: blocks concurrent admission decisions until this
+      // transaction commits or rolls back, without locking the whole table, and
+      // releases automatically with no unlock path to forget. `qwa:build-admission`
+      // is a reserved lock key for this repository — no other pg_advisory_xact_lock
+      // caller exists in this codebase today, and a collision would only
+      // over-serialise unrelated work (fail safe), never under-serialise this one.
+      await client.query("SELECT pg_advisory_xact_lock(hashtext('qwa:build-admission'))");
 
-    const row = inserted.rows[0];
-    if (row) return { build: toRecord(row), created: true };
+      // A retry must never become a rejection — the same reasoning
+      // ADR-0004-idempotency already applies. Check for an existing build under this
+      // key before any cap is consulted; the row, once found here under the lock, is
+      // safe to trust for the rest of this decision.
+      const existing = await client.query<BuildRow>(
+        'SELECT * FROM builds WHERE owner_id = $1 AND idempotency_key = $2',
+        [record.ownerId, record.idempotencyKey],
+      );
+      const replay = existing.rows[0];
+      if (replay) return { outcome: 'replayed', build: toRecord(replay) };
 
-    const existing = await this.#pool.query<BuildRow>(
-      'SELECT * FROM builds WHERE owner_id = $1 AND idempotency_key = $2',
-      [record.ownerId, record.idempotencyKey],
-    );
-    const found = existing.rows[0];
-    if (!found) {
-      // The conflicting row vanished between the two statements, which can only mean
-      // the configuration was deleted. Surfacing it beats returning a fabricated build.
-      throw new Error('build insert conflicted but no existing build was found');
+      // One pass over `builds` for all three counts. The lock above is what makes
+      // reading these counts here and re-deriving them inside the INSERT's own SELECT
+      // (below) consistent with each other — nothing else can write a competing row
+      // in between. The cutoff for `owner_hourly` comes from the database clock,
+      // inside this statement, inclusive at the lower bound — never from
+      // `Date.now()` in the API process, which two skewed API processes could
+      // disagree about.
+      const counted = await client.query<{
+        global_active: string;
+        owner_active: string;
+        owner_hourly: string;
+      }>(
+        `SELECT
+           count(*) FILTER (WHERE status = ANY($2::text[])) AS global_active,
+           count(*) FILTER (WHERE owner_id = $1 AND status = ANY($2::text[])) AS owner_active,
+           count(*) FILTER (WHERE owner_id = $1 AND requested_at >= now() - interval '1 hour')
+             AS owner_hourly
+         FROM builds`,
+        [record.ownerId, ACTIVE_STATUSES],
+      );
+      const row = counted.rows[0]!;
+      const globalActive = Number(row.global_active);
+      const ownerActive = Number(row.owner_active);
+      const ownerHourly = Number(row.owner_hourly);
+
+      // Checked in this order deliberately: a global rejection is not the caller's
+      // doing and must be named first, before either per-owner count is considered.
+      const rejection = this.#firstRejection({
+        globalActive,
+        ownerActive,
+        ownerHourly,
+      });
+      if (rejection) return rejection;
+
+      // The predicates below are not redundant with the check just performed: D-11
+      // requires the database to be the final authority on admission, independent of
+      // the application code path, not merely informed by a TypeScript branch. Under
+      // the advisory lock the two agree by construction, so a `WHERE`-rejected insert
+      // here is a bug, not a legitimate outcome.
+      const inserted = await client.query<BuildRow>(
+        `INSERT INTO builds
+           (id, configuration_id, configuration_revision, owner_id, catalog_version,
+            qmk_commit, generator_version, build_image_ref, build_image_digest, status,
+            idempotency_key, requested_at, attempt_count)
+         SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13
+         FROM (
+           SELECT
+             count(*) FILTER (WHERE status = ANY($16::text[])) AS global_active,
+             count(*) FILTER (WHERE owner_id = $4 AND status = ANY($16::text[])) AS owner_active,
+             count(*) FILTER (WHERE owner_id = $4 AND requested_at >= now() - interval '1 hour')
+               AS owner_hourly
+           FROM builds
+         ) counts
+         WHERE counts.global_active < $14
+           AND counts.owner_active < $15
+           AND counts.owner_hourly < $17
+         ON CONFLICT (owner_id, idempotency_key) DO NOTHING
+         RETURNING *`,
+        [
+          record.id,
+          record.configurationId,
+          record.configurationRevision,
+          record.ownerId,
+          record.catalogVersion,
+          record.qmkCommit,
+          record.generatorVersion,
+          record.buildImageRef,
+          record.buildImageDigest,
+          record.status,
+          record.idempotencyKey,
+          record.requestedAt,
+          record.attemptCount,
+          BUILD_LIMITS.maxGlobalActiveBuilds,
+          BUILD_LIMITS.maxActiveBuildsPerOwner,
+          ACTIVE_STATUSES,
+          BUILD_LIMITS.maxBuildsPerOwnerPerHour,
+        ],
+      );
+
+      const insertedRow = inserted.rows[0];
+      if (!insertedRow) {
+        // Impossible under the advisory lock, since the counts above just proved
+        // room for this insert — a bug signal, not a user-facing condition.
+        throw new Error(
+          'build insert was rejected by its own admission predicates despite passing the ' +
+            'identical counts under the same advisory lock',
+        );
+      }
+      return { outcome: 'created', build: toRecord(insertedRow) };
+    });
+  }
+
+  /** The first admission cap (global, then per-owner) that is at or over its limit. */
+  #firstRejection(counts: {
+    globalActive: number;
+    ownerActive: number;
+    ownerHourly: number;
+  }): { outcome: 'rejected'; cap: BuildAdmissionCap; observed: number; limit: number } | null {
+    if (counts.globalActive >= BUILD_LIMITS.maxGlobalActiveBuilds) {
+      return {
+        outcome: 'rejected',
+        cap: 'global_active',
+        observed: counts.globalActive,
+        limit: BUILD_LIMITS.maxGlobalActiveBuilds,
+      };
     }
-    return { build: toRecord(found), created: false };
+    if (counts.ownerActive >= BUILD_LIMITS.maxActiveBuildsPerOwner) {
+      return {
+        outcome: 'rejected',
+        cap: 'owner_active',
+        observed: counts.ownerActive,
+        limit: BUILD_LIMITS.maxActiveBuildsPerOwner,
+      };
+    }
+    if (counts.ownerHourly >= BUILD_LIMITS.maxBuildsPerOwnerPerHour) {
+      return {
+        outcome: 'rejected',
+        cap: 'owner_hourly',
+        observed: counts.ownerHourly,
+        limit: BUILD_LIMITS.maxBuildsPerOwnerPerHour,
+      };
+    }
+    return null;
   }
 
   async get(id: string, ownerId: string): Promise<BuildRecord | null> {
@@ -254,6 +360,14 @@ export class PostgresBuildStore implements BuildRepository, BuildQueue {
       `SELECT count(*)::text AS count FROM builds
         WHERE owner_id = $1 AND status IN ('queued','preparing','building','uploading')`,
       [ownerId],
+    );
+    return Number(result.rows[0]?.count ?? '0');
+  }
+
+  async countActiveGlobal(): Promise<number> {
+    const result = await this.#pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM builds
+        WHERE status IN ('queued','preparing','building','uploading')`,
     );
     return Number(result.rows[0]?.count ?? '0');
   }

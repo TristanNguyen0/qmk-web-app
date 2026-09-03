@@ -1,4 +1,5 @@
 export type {
+  BuildAdmissionCap,
   BuildQueue,
   BuildRepository,
   BuildSummary,

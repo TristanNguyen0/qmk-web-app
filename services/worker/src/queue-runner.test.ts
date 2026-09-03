@@ -158,8 +158,11 @@ beforeEach(() => {
 });
 
 async function enqueue(overrides: Partial<BuildRecord> = {}): Promise<string> {
-  const { build } = await queue.create(buildRecord(overrides));
-  return build.id;
+  const result = await queue.create(buildRecord(overrides));
+  if (result.outcome === 'rejected') {
+    throw new Error(`unexpected admission rejection in test setup: cap=${result.cap}`);
+  }
+  return result.build.id;
 }
 
 describe('QueueRunner.runOnce', () => {

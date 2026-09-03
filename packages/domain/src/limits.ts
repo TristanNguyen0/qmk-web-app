@@ -39,6 +39,18 @@ export type Limits = typeof LIMITS;
  */
 export const BUILD_LIMITS = {
   /**
+   * Total builds queued or running across every owner at once — the queue-depth cap
+   * that protects the single build host regardless of how many distinct sessions are
+   * asking. Queue depth is directly a wait time: depth × mean compile time ÷ worker
+   * count. The host runs one worker, which compiles one build at a time, so at
+   * ~60-120s per compile a depth of 8 is a worst case of roughly 8-16 minutes for the
+   * last person in line — the edge of tolerable. 8 is also 4x `maxActiveBuildsPerOwner`,
+   * so four distinct sessions can each hold their full allowance before this cap bites.
+   * Tuning trigger: raise it when more than one worker runs, in proportion to worker
+   * count — not in response to a single busy hour.
+   */
+  maxGlobalActiveBuilds: 8,
+  /**
    * Builds one session may have queued or running at once. A session that wants a
    * different result cancels or waits; it cannot occupy the queue.
    */
