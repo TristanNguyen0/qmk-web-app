@@ -827,6 +827,121 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
         expect(await builds.getBuildInput(randomUUID())).toBeNull();
       });
     });
+
+    // The properties above (creation, quotas, idempotency) are each proven with
+    // sequential calls, which never exercises the race a naive read-then-check would
+    // lose to. This block proves the same properties hold when many create() calls
+    // race for real, built as an array of promises before any of them is awaited —
+    // awaiting sequentially would not exercise the race and would make these pass
+    // against a store with no lock at all.
+    //
+    // The Postgres backend's pool has `max: 4` (see `postgresAvailable()` above), so
+    // at most four of these transactions are genuinely simultaneous against Postgres.
+    // That is enough to expose the race — RESEARCH.md's Pitfall 1 shows two
+    // concurrent racers suffice — but it is a comment, not a guarantee of full
+    // concurrency: do not mistake pool exhaustion here for serialisation by the
+    // advisory lock, and raise the pool's `max` only if a future scenario needs more
+    // than four requests genuinely in flight at once.
+    describe('admission control under concurrency', () => {
+      const ITERATIONS = 5;
+
+      /** Claims and fails up to `count` queued builds, freeing their slots for reuse
+       * by the next iteration of a loop within one `it()`. */
+      async function freeSlots(count: number): Promise<void> {
+        for (let i = 0; i < count; i += 1) {
+          const claimed = await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
+          if (!claimed) break;
+          await builds.fail({
+            buildId: claimed.buildId,
+            workerId: WORKER,
+            failureCode: 'COMPILE_FAILED',
+            logReference: null,
+          });
+        }
+      }
+
+      it('accepts exactly maxGlobalActiveBuilds concurrent creates and rejects the rest', async () => {
+        const cap = BUILD_LIMITS.maxGlobalActiveBuilds;
+        const total = cap + 4;
+
+        for (let iter = 0; iter < ITERATIONS; iter += 1) {
+          // A distinct owner per racer: this scenario is about the global cap alone,
+          // and maxActiveBuildsPerOwner (2) would otherwise reject most of these
+          // racers before the global cap ever got a chance to.
+          const owners = Array.from({ length: total }, () => randomUUID());
+          const configIds = await Promise.all(
+            owners.map((owner) => backend.seedConfiguration(owner)),
+          );
+
+          // Built before any is awaited, so all `total` requests race for real.
+          const promises = owners.map((owner, i) => builds.create(buildRecord(configIds[i]!, owner)));
+          const results = await Promise.all(promises);
+
+          const created = results.filter((r) => r.outcome === 'created');
+          const rejected = results.filter((r) => r.outcome === 'rejected');
+
+          expect(created.length).toBe(cap);
+          expect(rejected.length).toBe(total - cap);
+          for (const r of rejected) {
+            if (r.outcome === 'rejected') expect(r.cap).toBe('global_active');
+          }
+          expect(await builds.countActiveGlobal()).toBe(created.length);
+
+          await freeSlots(created.length);
+        }
+      });
+
+      it('accepts exactly maxActiveBuildsPerOwner concurrent creates for one owner and rejects the rest', async () => {
+        const cap = BUILD_LIMITS.maxActiveBuildsPerOwner;
+        const total = cap + 3;
+
+        for (let iter = 0; iter < ITERATIONS; iter += 1) {
+          const owner = randomUUID();
+          const ownerConfigId = await backend.seedConfiguration(owner);
+
+          const promises = Array.from({ length: total }, () =>
+            builds.create(buildRecord(ownerConfigId, owner)),
+          );
+          const results = await Promise.all(promises);
+
+          const created = results.filter((r) => r.outcome === 'created');
+          const rejected = results.filter((r) => r.outcome === 'rejected');
+
+          expect(created.length).toBe(cap);
+          expect(rejected.length).toBe(total - cap);
+          for (const r of rejected) {
+            if (r.outcome === 'rejected') expect(r.cap).toBe('owner_active');
+          }
+
+          await freeSlots(created.length);
+        }
+      });
+
+      it('accepts exactly one create among concurrent duplicates of one idempotency key', async () => {
+        for (let iter = 0; iter < ITERATIONS; iter += 1) {
+          const owner = randomUUID();
+          const ownerConfigId = await backend.seedConfiguration(owner);
+          const sharedRecord = buildRecord(ownerConfigId, owner);
+
+          const promises = Array.from({ length: 5 }, () =>
+            builds.create({ ...sharedRecord, id: randomUUID() }),
+          );
+          const results = await Promise.all(promises);
+
+          const created = results.filter((r) => r.outcome === 'created');
+          const replayed = results.filter((r) => r.outcome === 'replayed');
+
+          expect(created.length).toBe(1);
+          expect(replayed.length).toBe(4);
+          const ids = new Set(
+            results.flatMap((r) => (r.outcome === 'rejected' ? [] : [r.build.id])),
+          );
+          expect(ids.size).toBe(1);
+
+          await freeSlots(created.length);
+        }
+      });
+    });
   });
 }
 
