@@ -141,7 +141,7 @@ a request.
 
 ```bash
 pnpm typecheck
-pnpm test          # 357 tests, no Docker required
+pnpm test          # 496 tests, no Docker required
 pnpm socd:matrix catalogs/0.33.13-1   # real SOCD compiles; needs Docker + the pinned tree
 ```
 
