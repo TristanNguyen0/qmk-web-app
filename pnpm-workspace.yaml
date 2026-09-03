@@ -4,3 +4,18 @@ packages:
   - 'packages/*'
 allowBuilds:
   esbuild: true
+overrides:
+  # Pins the three independent fast-uri chains (ajv's own 3.x line,
+  # @fastify/ajv-compiler's direct 3.x dependency, and fast-json-stringify's 4.x
+  # line, all reachable under fastify) forward to their patched releases.
+  # GHSA-jqff-g426-hqxp / GHSA-fph4-wmhf-6fwf and related fast-uri advisories are
+  # fixed at fast-uri>=3.1.6 and >=4.1.3 respectively. Separate entries because
+  # each parent declares a different major of fast-uri; a single blanket
+  # override would break whichever one it doesn't match.
+  ajv>fast-uri: '^3.1.6'
+  '@fastify/ajv-compiler>fast-uri': '^3.1.6'
+  fast-json-stringify>fast-uri: '^4.1.4'
+  # vitest@3.2.7's vite peer resolves to the lowest satisfying major (^5.0.0)
+  # by default, which is a version line with an unfixed high-severity
+  # `server.fs.deny` bypass. Force the 6.x line, patched at >=6.4.3.
+  vite: '^6.4.3'

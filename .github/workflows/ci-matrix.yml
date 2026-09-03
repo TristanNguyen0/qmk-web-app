@@ -1,0 +1,290 @@
+name: CI Matrix
+
+# Triggers unconditionally, like ci-fast.yml — no `paths` filter anywhere in this
+# block. D-09 / RESEARCH.md Pitfall 2: a required check attached to a workflow a
+# `paths:` trigger filter can skip entirely never reports at all, and GitHub's branch
+# protection then waits on it forever. The filtering that actually matters here — is
+# the expensive matrix relevant to this change set — happens one level down, as a
+# job-level condition fed by the `changes` job below, so `matrix-result` always
+# reports something.
+on:
+  pull_request: {}
+  push:
+    branches:
+      - main
+
+# Narrower than the repository default (T-05-32).
+permissions:
+  contents: read
+
+# A single-runner host means a queued, superseded run — nine real compiles plus two
+# vulnerability scans — blocks every other pull request for its full length. Cancel
+# the stale one on a force-push.
+concurrency:
+  group: ci-matrix-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Determines whether this change set touches anything the curated matrix gates.
+  # Runs on a GitHub-hosted runner, deliberately: it only reads git history to compute
+  # a diff, so it costs nothing on the self-hosted host and its result is available
+  # even when that host is offline (docs/runbooks/ci-runner.md).
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix-relevant: ${{ steps.diff.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: `git merge-base`/`git diff` below need both endpoints of
+          # the diff reachable, and a PR event's default shallow checkout can leave
+          # the base commit unavailable.
+          fetch-depth: 0
+
+      # No marketplace path-filter action (T-05-30) — an inline `git diff` against
+      # the merge base (pull_request) or the previous tip (push), matched against the
+      # paths claude.md's Testing-strategy section names, resolved to this tree: the
+      # generator package; the SOCD module package and the registry/policy modules in
+      # the domain package that define what is generated; everything under
+      # infra/qmk/, which is both the pin (manifest.json) and the build image; the
+      # sandbox package and the worker's source and scripts, which are the build
+      # path; and this workflow file itself, so a change to the gate is gated by the
+      # gate.
+      - name: Detect gated-path changes
+        id: diff
+        run: |
+          set -uo pipefail
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+            MERGE_BASE="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
+            if [ $? -ne 0 ] || [ -z "$MERGE_BASE" ]; then
+              echo "could not compute a merge base — failing open toward running the matrix, never toward silently skipping it"
+              echo "relevant=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            CHANGED="$(git diff --name-only "$MERGE_BASE" "$HEAD_SHA")"
+          else
+            BEFORE_SHA="${{ github.event.before }}"
+            if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+              echo "no prior commit to diff against (first push, or a force-push whose old tip is gone) — failing open"
+              echo "relevant=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            CHANGED="$(git diff --name-only "$BEFORE_SHA" "${{ github.sha }}")"
+            if [ $? -ne 0 ]; then
+              echo "diff against the previous tip failed — failing open"
+              echo "relevant=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          GATED_PREFIXES=(
+            "packages/qmk-generator/"
+            "packages/qmk-socd-module/"
+            "packages/domain/src/module-registry.ts"
+            "packages/domain/src/socd.ts"
+            "infra/qmk/"
+            "packages/qmk-sandbox/"
+            "services/worker/src/"
+            "services/worker/scripts/"
+            ".github/workflows/ci-matrix.yml"
+          )
+
+          RELEVANT=false
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            for prefix in "${GATED_PREFIXES[@]}"; do
+              if [ "$file" = "$prefix" ] || [[ "$file" == "$prefix"* ]]; then
+                RELEVANT=true
+                break 2
+              fi
+            done
+          done <<< "$CHANGED"
+
+          echo "changed files in this change set:"
+          echo "$CHANGED"
+          echo "gated-path relevant: $RELEVANT"
+          echo "relevant=$RELEVANT" >> "$GITHUB_OUTPUT"
+
+  # Compiles the curated matrix for real, on the build host — the only machine that
+  # holds Docker, the pinned build image, and the pinned QMK checkout.
+  matrix:
+    name: matrix
+    needs: changes
+    # T-05-28/D-06: the self-hosted runner must never execute a fork pull request.
+    # This guard is the first of D-06's two independent controls; the repository's
+    # fork-PR approval setting (docs/runbooks/ci-runner.md) is the second. On a
+    # `push` event `github.event.pull_request` is unset, so this only constrains
+    # `pull_request` triggers.
+    if: >-
+      needs.changes.outputs.matrix-relevant == 'true' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: [self-hosted, qmk-build]
+    # Nine real compiles across two fixture sets, plus one double-build
+    # reproducibility check. Generous on purpose.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # T-05-30: the only marketplace action either workflow in this repository uses
+      # is actions/checkout above.
+      - name: Enable pnpm (via corepack, pinned by package.json's packageManager)
+        run: |
+          corepack enable
+          PNPM_VERSION="$(node -p "require('./package.json').packageManager.split('@')[1]")"
+          corepack prepare "pnpm@${PNPM_VERSION}" --activate
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      # T-05-31: the runner must use the image the manifest names, not a rebuilt
+      # look-alike — every build row in production records this digest, and a gate
+      # running against a different image proves nothing about what ships. No
+      # `docker build` step exists anywhere in this workflow; refreshing the image is
+      # part of the controlled QMK refresh process (docs/runbooks/ci-runner.md), never
+      # a CI side effect.
+      - name: Assert local build image matches infra/qmk/manifest.json
+        run: |
+          set -euo pipefail
+          IMAGE_REF="$(node -e 'const m=require("./infra/qmk/manifest.json"); process.stdout.write(m.buildImage.name + ":" + m.buildImage.tag)')"
+          MANIFEST_DIGEST="$(node -e 'const d=require("./infra/qmk/manifest.json").buildImage.digest; process.stdout.write(d===null||d===undefined?"":d)')"
+
+          if ! docker image inspect "$IMAGE_REF" > /dev/null 2>&1; then
+            echo "::error::the runner has no local image matching infra/qmk/manifest.json's buildImage (${IMAGE_REF}). This job asserts rather than rebuilds — see docs/runbooks/ci-runner.md for how the image is refreshed." >&2
+            exit 1
+          fi
+
+          if [ -n "$MANIFEST_DIGEST" ]; then
+            LOCAL_DIGEST="$(docker image inspect "$IMAGE_REF" --format='{{index .RepoDigests 0}}' 2>/dev/null || true)"
+            if [ "$LOCAL_DIGEST" != "$MANIFEST_DIGEST" ]; then
+              echo "::error::local image ${IMAGE_REF} digest (${LOCAL_DIGEST:-none}) does not match infra/qmk/manifest.json's recorded digest (${MANIFEST_DIGEST}). The runner must use the exact image the manifest names — see docs/runbooks/ci-runner.md." >&2
+              exit 1
+            fi
+            echo "verified ${IMAGE_REF} against manifest digest ${MANIFEST_DIGEST}"
+          else
+            echo "${IMAGE_REF} exists locally; manifest records no digest yet, so only existence was checked"
+          fi
+
+      - name: Run the curated compile matrix
+        run: pnpm run matrix
+
+  # Runs whenever `matrix` does, on the same runner — that host is the only machine
+  # holding the build image. Scans it, and the checked-out repository filesystem, for
+  # known vulnerabilities (T-05-33). Does not depend on `matrix` succeeding: a broken
+  # compile and a vulnerable image are independent facts worth surfacing separately.
+  scan:
+    name: scan
+    needs: changes
+    if: >-
+      needs.changes.outputs.matrix-relevant == 'true' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: [self-hosted, qmk-build]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine pinned build image reference
+        id: image
+        run: |
+          IMAGE_REF="$(node -e 'const m=require("./infra/qmk/manifest.json"); process.stdout.write(m.buildImage.name + ":" + m.buildImage.tag)')"
+          echo "ref=$IMAGE_REF" >> "$GITHUB_OUTPUT"
+
+      # Trivy runs from its own official image, pinned by digest — not a marketplace
+      # action (T-05-30), the same reasoning D-06 applies to fork pull requests
+      # applied to the other supply-chain direction. Two passes per target: the first
+      # prints everything — every severity, including unfixed findings — so nothing
+      # is hidden from a human reader; the second is what actually gates the check,
+      # scoped to fixable high/critical findings only (T-05-33, planner_notes). A
+      # 3.7 GB toolchain image will always carry unfixable OS findings; a gate that is
+      # permanently red is a gate that gets disabled, which is strictly worse than one
+      # scoped to what can actually be acted on. The vulnerability database persists
+      # in a docker volume across runs so a persistent self-hosted runner isn't
+      # re-downloading it on every pull request.
+      - name: Scan build image — full report
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock:ro \
+            -v trivy-db-cache:/root/.cache/trivy \
+            aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+            image "${{ steps.image.outputs.ref }}"
+
+      - name: Scan build image — gate on fixable high/critical
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock:ro \
+            -v trivy-db-cache:/root/.cache/trivy \
+            aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+            image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "${{ steps.image.outputs.ref }}"
+
+      # No Docker socket mount here — only the image scan above needs it.
+      - name: Scan repository filesystem — full report
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workdir:ro" \
+            -v trivy-db-cache:/root/.cache/trivy \
+            aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+            fs /workdir
+
+      - name: Scan repository filesystem — gate on fixable high/critical
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workdir:ro" \
+            -v trivy-db-cache:/root/.cache/trivy \
+            aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+            fs --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 /workdir
+
+  # The only job whose name is used as a required status check. `if: always()` is
+  # what makes it correct in all four cases: it succeeds when the matrix ran and
+  # passed, and when the matrix was genuinely not applicable; it fails when the
+  # matrix or the scan failed or was cancelled; and it fails explicitly — never
+  # vacuously passes — on a fork pull request (T-05-28/T-05-29). Runs on a
+  # GitHub-hosted runner: it only evaluates job results and the event context, so it
+  # never needs the self-hosted host or touches repository files.
+  matrix-result:
+    name: matrix-result
+    needs: [changes, matrix, scan]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Evaluate the matrix gate
+        run: |
+          set -uo pipefail
+
+          # A fork pull request must FAIL this check, not have it skipped. `matrix`
+          # and `scan` above already refuse to run on the self-hosted runner for a
+          # fork PR via their own `if:` guard — the guard stops the job running, but
+          # a required check satisfied by a *skipped* job would mean opening a pull
+          # request from a fork is a way to bypass the matrix entirely. That is the
+          # difference between a guard and a bypass, and this is where it is closed.
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
+            echo "::error::fork pull request — the self-hosted runner never executes fork pull requests (D-06), so this required check fails explicitly rather than reporting a vacuous pass." >&2
+            exit 1
+          fi
+
+          CHANGES_RESULT="${{ needs.changes.result }}"
+          RELEVANT="${{ needs.changes.outputs.matrix-relevant }}"
+          MATRIX_RESULT="${{ needs.matrix.result }}"
+          SCAN_RESULT="${{ needs.scan.result }}"
+
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "::error::the changes job (path-relevance detection) did not succeed (${CHANGES_RESULT}); cannot determine whether the curated matrix was required." >&2
+            exit 1
+          fi
+
+          if [ "$RELEVANT" != "true" ]; then
+            echo "no generator/template/QMK-pin/build-image changes in this pull request — the curated matrix is not applicable to this change set"
+            exit 0
+          fi
+
+          if [ "$MATRIX_RESULT" = "success" ] && [ "$SCAN_RESULT" = "success" ]; then
+            echo "gated paths changed; the curated matrix compiled and the image/filesystem vulnerability scan passed"
+            exit 0
+          fi
+
+          echo "::error::gated paths changed, but the curated matrix and/or vulnerability scan did not pass (matrix=${MATRIX_RESULT}, scan=${SCAN_RESULT})." >&2
+          exit 1
