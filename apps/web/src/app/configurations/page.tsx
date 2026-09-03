@@ -5,6 +5,8 @@
  * ownership logic of its own.
  */
 import { cookies } from 'next/headers';
+import { DataLossNotice } from '../../components/DataLossNotice.tsx';
+import { ImportConfigurationButton } from '../../components/ImportConfigurationButton.tsx';
 import type { ConfigurationSummary } from '../../lib/client.ts';
 
 export const dynamic = 'force-dynamic';
@@ -37,10 +39,8 @@ export default async function ConfigurationsPage() {
   return (
     <>
       <h1>Your configurations</h1>
-      <p className="provenance">
-        Configurations are tied to this browser session — there are no accounts yet, so clearing
-        cookies loses them.
-      </p>
+      <DataLossNotice />
+      <ImportConfigurationButton />
 
       {body.items.length === 0 ? (
         <p className="notice">

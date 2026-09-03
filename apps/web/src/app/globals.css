@@ -108,6 +108,24 @@ h2 {
   color: var(--text);
 }
 
+/*
+ * Persistent, non-dismissable data-loss disclosure (see DataLossNotice.tsx). Built on
+ * the same visual language as `.provenance` — surface background, 6px radius, the
+ * same padding and font size — but with a stronger border so it reads as more than a
+ * routine provenance line. Deliberately not `.notice`: that class is used for
+ * transient and error states elsewhere, and reusing it here would teach users this
+ * permanent line is something that goes away.
+ */
+.data-loss {
+  background: var(--surface);
+  border: 2px solid var(--warn-border);
+  border-radius: 6px;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  color: var(--text);
+  margin-bottom: 1.25rem;
+}
+
 /* Search + keyboard list */
 .search-form {
   display: flex;
