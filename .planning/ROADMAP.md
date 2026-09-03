@@ -202,7 +202,7 @@ Plans:
   4. An operator can restore configurations and artifacts from a backup and can state what retention actually deleted and when.
   5. The launch identity model is decided and recorded: either accounts exist and a user can reach their configurations from a second device, or anonymous-only is a stated launch constraint whose data-loss behaviour is visible in-product.
 
-**Plans**: 4/8 plans executed
+**Plans**: 5/8 plans executed
 
 Plans:
 **Wave 1**
@@ -211,7 +211,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 05-02-PLAN.md — One curated smoke-matrix runner over toolchain-diverse fixture sets (wave 2)
+- [x] 05-02-PLAN.md — One curated smoke-matrix runner over toolchain-diverse fixture sets (wave 2)
 - [x] 05-03-PLAN.md — Anonymous-only launch identity: persistent data-loss notice, export/import, ADR 0006 (wave 2)
 - [x] 05-04-PLAN.md — Retention ledger, Postgres backups with a real restore drill, licensing review (wave 2)
 - [x] 05-05-PLAN.md — Session issuance IP limit, required session secret, explicit trusted proxy hop (wave 2)
@@ -285,7 +285,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → **4** → 5 → 6
 | 2. Saved Visual Configurations | n/a (pre-GSD) | Complete | - |
 | 3. Generation and Server Builds | n/a (pre-GSD) | Complete | 2026-08-09 |
 | 4. Verified SOCD Support | 4/5 | In Progress|  |
-| 5. Hardening and Scale | 4/8 | In Progress|  |
+| 5. Hardening and Scale | 5/8 | In Progress|  |
 | 6. Browser Flashing Research and Rollout | 0/TBD | Not started | - |
 
 Phases 0–3 were delivered before this planning directory existed and were not decomposed into GSD
