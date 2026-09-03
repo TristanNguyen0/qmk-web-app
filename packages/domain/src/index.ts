@@ -4,6 +4,7 @@ export * from './keycodes.ts';
 export * from './socd.ts';
 export * from './module-registry.ts';
 export * from './configuration.ts';
+export * from './configuration-file.ts';
 export * from './catalog.ts';
 export * from './build.ts';
 export * from './errors.ts';
