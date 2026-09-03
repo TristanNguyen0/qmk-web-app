@@ -218,11 +218,18 @@ Each is verified by a test or by the smoke build, not just intended:
   worker whose lease expired cannot finish a build another worker has taken over.
 - A cancelled build's firmware is discarded even if the compile had already succeeded; its log is
   kept.
-- Per-session quotas cap concurrent and hourly builds; both return `BUILD_QUEUE_LIMITED`.
+- Build admission — a global queue-depth cap plus per-owner concurrency and hourly quotas — is
+  decided atomically inside one Postgres transaction on insert; a build is `created`, `replayed`
+  (an idempotent retry), or `rejected` naming which cap it hit, and both the per-owner and the
+  global rejection return `BUILD_QUEUE_LIMITED`.
 - The worker re-validates the stored configuration against the catalog rather than trusting that
   the API validated it before queueing.
 - The worker has its own database role with no access to `configurations` at all
   (`apps/api/migrations/003_worker_role.sql`).
+
+See [`docs/deployment-requirements.md`](docs/deployment-requirements.md) for what a deployment
+must supply on top of the properties above — a session secret, the trusted proxy hop, an optional
+telemetry collector, a log sink, a backup schedule, and a CI runner.
 
 ## Known gaps
 
@@ -232,11 +239,34 @@ Each is verified by a test or by the smoke build, not just intended:
   editing the set.
 - SOCD offers fixed opposing pairs (`W/S`, `A/D`, `UP/DOWN`, `LEFT/RIGHT`) and two policies.
   Arbitrary key pairs and per-pair policies are not offered.
-- Only `crkbd/rev1` has been through a real compile; the curated smoke matrix does not exist yet.
-  3,743 keyboards are *catalogued*, which is a weaker claim than *known to build*.
-- No real authentication: sessions are anonymous cookies, so clearing cookies loses your work.
+- **The curated smoke matrix now exists and has compiled for real, but its own diversity
+  criterion is not yet met.** Four keyboards (`crkbd/rev1`, `handwired/onekey/elite_c`,
+  `handwired/onekey/rp2040`, `handwired/onekey/stm32f0_disco`) span three MCU families
+  (`atmega32u4`, `RP2040`, `STM32F072`) and four bootloaders, covering the 2,670 of 3,743
+  supported keyboards (~71%) that share one of those `(processor, bootloader)` pairs — see
+  [`docs/matrix-selection.md`](docs/matrix-selection.md). The remaining keyboards are still
+  *catalogued*, still a weaker claim than *known to build*. Only one member (`crkbd/rev1`) carries
+  a real multi-position layout; the other three are single-position toolchain probes, so the
+  matrix's own criterion of at least two multi-position members is not yet satisfied (tracked in
+  `.planning/WINDOWS.md`). CI (`.github/workflows/ci-matrix.yml`) is configured, via branch
+  protection on `main` requiring the `matrix-result` and `fast` checks, to require this matrix to
+  compile before a change to the generator, templates, QMK pin, or build image merges — but that
+  gate has not yet been exercised against a real pull request; see
+  [`docs/deployment-requirements.md`](docs/deployment-requirements.md).
+- **Anonymous-only sessions are a stated launch decision, not an unmade one**
+  ([ADR 0006](docs/adr/0006-anonymous-only-launch-identity.md)). A persistent, non-dismissable
+  in-product notice states that the work belongs to this browser's cookie, and a configuration can
+  be exported as JSON and re-imported. Neither mitigation removes the underlying constraint: a
+  user who clears cookies, or switches browsers or devices, loses any work they have not
+  exported, and there is no way to reach a configuration from a second device.
 - Artifact storage is a shared directory. The `ArtifactStore` seam is in place, but S3 is not
   implemented, so the API and the worker must share a filesystem ([ADR 0004](docs/adr/0004-the-builds-table-is-the-queue.md)).
 - The worker polls once a second per idle worker; there is no `LISTEN/NOTIFY` yet.
-- No global build concurrency limit or IP-based rate limiting — only per-session quotas.
+- **A global build queue-depth cap and IP-scoped session-issuance rate limiting now exist**,
+  alongside per-session build quotas: `BUILD_LIMITS.maxGlobalActiveBuilds = 8` (enforced
+  atomically in Postgres) and `SESSION_LIMITS.issuancePerIpPerHour = 120`. The session-issuance
+  limit is an in-process counter — with more than one API process the effective limit multiplies —
+  so the Postgres-enforced global build cap is what actually holds the line under real
+  concurrency. See [`docs/deployment-requirements.md`](docs/deployment-requirements.md) for what a
+  deployment must configure.
 - No end-to-end browser tests yet; the UI is covered by API tests and pure geometry unit tests.
