@@ -11,13 +11,14 @@
     "dev": "node --experimental-strip-types --watch src/server.ts"
   },
   "dependencies": {
+    "@fastify/rate-limit": "^11.2.0",
     "@qmk-web-app/artifact-store": "workspace:*",
     "@qmk-web-app/build-queue": "workspace:*",
     "@qmk-web-app/domain": "workspace:*",
-    "fastify": "^5.2.0",
     "@qmk-web-app/qmk-catalog": "workspace:*",
-    "pg": "^8.13.1",
-    "@qmk-web-app/qmk-generator": "workspace:*"
+    "@qmk-web-app/qmk-generator": "workspace:*",
+    "fastify": "^5.2.0",
+    "pg": "^8.13.1"
   },
   "devDependencies": {
     "@qmk-web-app/qmk-fixtures": "workspace:*",

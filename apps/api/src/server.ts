@@ -6,7 +6,15 @@
  *   QWA_CATALOG_DIR    default <repo>/catalogs
  *   QWA_DATABASE_URL   default postgres://qwa:qwa_dev_password@127.0.0.1:5433/qwa
  *   QWA_ARTIFACT_DIR   default <repo>/var/artifacts — must be shared with the worker
- *   QWA_SESSION_SECRET required in production; a dev default is used otherwise
+ *   QWA_SESSION_SECRET required in every environment — there is no fallback. Generate
+ *                      one with:
+ *                        node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+ *   QWA_TRUST_PROXY    the reverse-proxy hop (an IP address, a CIDR, or a comma-
+ *                      separated list of either) allowed to set X-Forwarded-For.
+ *                      Required in production; unset means "trust nothing" in
+ *                      development, so request.ip is the raw socket address. The API
+ *                      must sit behind a reverse proxy that sets this header in
+ *                      production — QWA_TRUST_PROXY must name that hop, never `true`.
  *   PORT               default 3001
  */
 import { existsSync, mkdirSync } from 'node:fs';
@@ -14,6 +22,7 @@ import { resolve } from 'node:path';
 import pg from 'pg';
 import { FilesystemArtifactStore } from '@qmk-web-app/artifact-store';
 import { buildApp } from './app.ts';
+import { parseTrustProxy, requireEnv } from './config.ts';
 import { PostgresBuildStore } from '@qmk-web-app/build-queue';
 import { CatalogStore } from './catalog-store.ts';
 import { PostgresConfigurationRepository } from './configurations/postgres-repository.ts';
@@ -31,11 +40,28 @@ const port = Number(process.env['PORT'] ?? 3001);
 const databaseUrl =
   process.env['QWA_DATABASE_URL'] ?? 'postgres://qwa:qwa_dev_password@127.0.0.1:5433/qwa';
 
-// A hardcoded dev secret is fine locally and unacceptable in production: it would let
-// anyone mint a session cookie for any owner id and read other users' configurations.
-const sessionSecret = process.env['QWA_SESSION_SECRET'] ?? 'dev-only-insecure-session-secret-0123456789';
-if (isProduction && !process.env['QWA_SESSION_SECRET']) {
-  console.error('QWA_SESSION_SECRET must be set when NODE_ENV=production');
+// No fallback in any environment: a guessable secret would let anyone mint a session
+// cookie for any owner id and read another session's configurations (D-04).
+let sessionSecret: string;
+try {
+  sessionSecret = requireEnv('QWA_SESSION_SECRET', process.env, {
+    hint:
+      'Generate one with:\n\n' +
+      `  node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"\n`,
+  });
+} catch (error) {
+  console.error((error as Error).message);
+  process.exit(1);
+}
+
+// D-14: request.ip is only as trustworthy as trustProxy is correctly configured.
+// Unconfigured in production means every visitor collapses into the proxy's own
+// address, silently defeating the session-issuance rate limit for everyone at once.
+let trustProxy: string | string[] | false;
+try {
+  trustProxy = parseTrustProxy(process.env['QWA_TRUST_PROXY'], { production: isProduction });
+} catch (error) {
+  console.error((error as Error).message);
   process.exit(1);
 }
 
@@ -90,6 +116,7 @@ const app = buildApp({
   },
   sessionSecret,
   secureCookies: isProduction,
+  trustProxy,
   logger: true,
 });
 

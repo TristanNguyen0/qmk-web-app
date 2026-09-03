@@ -77,3 +77,36 @@ export const BUILD_LIMITS = {
 } as const;
 
 export type BuildLimits = typeof BUILD_LIMITS;
+
+/**
+ * Session-issuance abuse control.
+ *
+ * D-12: minting a fresh anonymous session is the cheap step that defeats every
+ * per-owner build quota — a caller who cannot get another build under one identity
+ * simply mints a new one. This is the single IP-scoped control that closes that hole;
+ * once it holds, `BUILD_LIMITS.maxActiveBuildsPerOwner` /
+ * `BUILD_LIMITS.maxBuildsPerOwnerPerHour` do their job again and a per-IP build quota
+ * is largely redundant.
+ *
+ * `issuancePerIpPerHour` is 120, over a rolling one-hour window. A legitimate visitor
+ * mints exactly one session per browser per year — the cookie's Max-Age is a
+ * deliberate one year — so 120 first-time visitors per hour from one address is
+ * generous for an office or campus behind a single NAT, which is exactly the case
+ * D-12 asks to protect. It simultaneously caps the fresh-session churn an attacker
+ * needs to route around the per-owner quotas at 120/hour/address; the global
+ * queue-depth cap (`BUILD_LIMITS.maxGlobalActiveBuilds`) remains the backstop that
+ * does not care how many identities are in play.
+ *
+ * Limitation that must stay visible here, not just in a design doc: this counter is
+ * in-process. With more than one API process the effective limit multiplies by the
+ * process count. That is tolerable only because this is not the load-bearing
+ * control — the global build cap is enforced in Postgres and is correct across
+ * processes regardless of how many session-issuance buckets exist.
+ */
+export const SESSION_LIMITS = {
+  issuancePerIpPerHour: 120,
+  /** The rolling window `issuancePerIpPerHour` is measured over, in milliseconds. */
+  issuanceWindowMs: 60 * 60 * 1000,
+} as const;
+
+export type SessionLimits = typeof SESSION_LIMITS;

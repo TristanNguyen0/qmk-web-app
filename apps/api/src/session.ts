@@ -9,9 +9,19 @@
  * The cookie is a UUID plus an HMAC over it. The HMAC prevents a client from simply
  * editing the cookie to claim another session's id, which would otherwise hand them
  * that session's configurations.
+ *
+ * D-12/D-14: minting a fresh session is the cheap step that defeats every per-owner
+ * build quota, so the mint branch below — and only the mint branch — is IP-rate-
+ * limited via `@fastify/rate-limit`'s manual-check seam (`app.createRateLimit`,
+ * verified against the installed 11.2.0 API; see 05-RESEARCH.md Assumption A3). A
+ * valid-cookie request never reaches the check at all, so a returning visitor is
+ * never rate-limited by IP — per-owner quotas already govern them.
  */
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import rateLimit from '@fastify/rate-limit';
+import { SESSION_LIMITS } from '@qmk-web-app/domain';
+import { sendRateLimited } from './errors.ts';
 
 export const SESSION_COOKIE = 'qwa_session';
 
@@ -61,16 +71,72 @@ function readCookie(header: string | undefined, name: string): string | null {
   return null;
 }
 
+export interface SessionIssuanceLimit {
+  /** Cookieless mints allowed from one address within `windowMs`. */
+  max: number;
+  windowMs: number;
+}
+
+/**
+ * Path prefixes whose every handler reads `request.ownerId`: the two route groups
+ * that actually need an identity. Health and the read-only catalog are deliberately
+ * absent — refusing them would buy nothing and would turn a busy NAT into a dead
+ * site, which D-12 explicitly asks this control not to do.
+ */
+const DEFAULT_SESSION_REQUIRED_PATH_PREFIXES = ['/v1/configurations', '/v1/builds'];
+
 export interface SessionOptions {
   secret: string;
   /** Set Secure on the cookie. Must be true in production. */
   secure: boolean;
+  /**
+   * Overrides `SESSION_LIMITS` for tests: a test that mints 121 sessions to observe
+   * the real boundary is a slow test that will be deleted. Defaults to
+   * `SESSION_LIMITS.issuancePerIpPerHour`/`issuanceWindowMs`.
+   */
+  issuanceLimit?: SessionIssuanceLimit;
+  /**
+   * Path prefixes that require an identity. A refused mint to one of these answers
+   * 429 and stops; a refused mint to any other path is served under a throwaway,
+   * uncookied owner id instead, so health checks and the read-only catalog stay
+   * reachable from an address that is over its issuance limit. Defaults to
+   * `DEFAULT_SESSION_REQUIRED_PATH_PREFIXES`.
+   */
+  sessionRequiredPathPrefixes?: string[];
 }
 
 export function registerSessions(app: FastifyInstance, options: SessionOptions): void {
   if (options.secret.length < 32) {
     throw new Error('session secret must be at least 32 characters');
   }
+
+  const issuanceLimit: SessionIssuanceLimit = options.issuanceLimit ?? {
+    max: SESSION_LIMITS.issuancePerIpPerHour,
+    windowMs: SESSION_LIMITS.issuanceWindowMs,
+  };
+  const sessionRequiredPathPrefixes =
+    options.sessionRequiredPathPrefixes ?? DEFAULT_SESSION_REQUIRED_PATH_PREFIXES;
+
+  // `global: false`: an ordinary request never consumes a slot merely by being
+  // routed. The manual check below is invoked only inside the mint branch.
+  void app.register(rateLimit, { global: false });
+
+  // `app.createRateLimit(options)` must be called exactly once: fastify-rate-limit's
+  // manual-check seam spawns a fresh, empty child counter store on every call (see
+  // `LocalStore.prototype.child` in the installed package) — calling it per-request
+  // would silently reset the count on every request. `app.after()` runs once the
+  // `rateLimit` registration above has finished, without making this function itself
+  // async (which would force every caller of `registerSessions`/`buildApp` to await).
+  let checkIssuance: ReturnType<FastifyInstance['createRateLimit']> | undefined;
+  app.after(() => {
+    checkIssuance = app.createRateLimit({
+      max: issuanceLimit.max,
+      timeWindow: issuanceLimit.windowMs,
+      // Default keyGenerator already keys on request.ip; explicit here so the
+      // dependency on Task 1's trustProxy wiring (app.ts) is visible at the call site.
+      keyGenerator: (req) => req.ip,
+    });
+  });
 
   app.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
     const existing = verify(readCookie(request.headers.cookie, SESSION_COOKIE) ?? '', options.secret);
@@ -79,9 +145,42 @@ export function registerSessions(app: FastifyInstance, options: SessionOptions):
       return;
     }
 
-    // No valid cookie: mint a new session. A tampered or expired cookie is treated
-    // as "no session" rather than an error, so a user is never locked out — they
-    // simply start fresh and cannot see the previous session's data.
+    // No valid cookie: about to mint. A tampered or expired cookie reaches this
+    // branch exactly like no cookie at all — minting is what actually happens here,
+    // so it is what the limit counts, regardless of why the previous cookie failed.
+    if (!checkIssuance) {
+      throw new Error(
+        'registerSessions: the rate-limit checker was not initialized before the ' +
+          'onRequest hook ran — app.after() ordering was violated',
+      );
+    }
+    const limitResult = await checkIssuance(request);
+    if (!limitResult.isAllowed && limitResult.isExceeded) {
+      const path = request.url.split('?')[0] ?? request.url;
+      const requiresSession = sessionRequiredPathPrefixes.some((prefix) =>
+        path.startsWith(prefix),
+      );
+
+      if (requiresSession) {
+        // A write served under a throwaway id would create data the caller can never
+        // return to — worse than a refusal — and an owner-scoped read served under
+        // one would leak an empty result that looks like "you have nothing" rather
+        // than "you are refused." Both are refused outright.
+        sendRateLimited(reply, limitResult.ttlInSeconds);
+        return;
+      }
+
+      // Health and the read-only catalog need no identity at all, so refusing them
+      // here buys nothing and turns a busy NAT into a dead site — exactly what D-12
+      // asks this control not to do. Assign a request-scoped id that is never written
+      // into a cookie: request.ownerId stays typed as always-present so no handler on
+      // this path acquires an undefined case, but nothing this "session" touches is
+      // ever recoverable by the caller, which is fine — nothing on these paths is
+      // owner-scoped in the first place.
+      request.ownerId = randomUUID();
+      return;
+    }
+
     const sessionId = randomUUID();
     request.ownerId = sessionId;
 
