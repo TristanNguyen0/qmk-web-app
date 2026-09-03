@@ -35,6 +35,8 @@ export interface BuildAppOptions {
   trustProxy?: string | string[] | false;
   /** Overrides SESSION_LIMITS for tests; see `session.ts#SessionOptions.issuanceLimit`. */
   sessionIssuanceLimit?: SessionIssuanceLimit;
+  /** See `session.ts#SessionOptions.sessionRequiredPathPrefixes`. */
+  sessionRequiredPathPrefixes?: string[];
   logger?: boolean;
 }
 
@@ -59,6 +61,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     secret: options.sessionSecret,
     secure: options.secureCookies ?? false,
     ...(options.sessionIssuanceLimit ? { issuanceLimit: options.sessionIssuanceLimit } : {}),
+    ...(options.sessionRequiredPathPrefixes
+      ? { sessionRequiredPathPrefixes: options.sessionRequiredPathPrefixes }
+      : {}),
   });
 
   app.get('/health', async () => ({ status: 'ok' }));

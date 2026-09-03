@@ -77,6 +77,14 @@ export interface SessionIssuanceLimit {
   windowMs: number;
 }
 
+/**
+ * Path prefixes whose every handler reads `request.ownerId`: the two route groups
+ * that actually need an identity. Health and the read-only catalog are deliberately
+ * absent — refusing them would buy nothing and would turn a busy NAT into a dead
+ * site, which D-12 explicitly asks this control not to do.
+ */
+const DEFAULT_SESSION_REQUIRED_PATH_PREFIXES = ['/v1/configurations', '/v1/builds'];
+
 export interface SessionOptions {
   secret: string;
   /** Set Secure on the cookie. Must be true in production. */
@@ -87,6 +95,14 @@ export interface SessionOptions {
    * `SESSION_LIMITS.issuancePerIpPerHour`/`issuanceWindowMs`.
    */
   issuanceLimit?: SessionIssuanceLimit;
+  /**
+   * Path prefixes that require an identity. A refused mint to one of these answers
+   * 429 and stops; a refused mint to any other path is served under a throwaway,
+   * uncookied owner id instead, so health checks and the read-only catalog stay
+   * reachable from an address that is over its issuance limit. Defaults to
+   * `DEFAULT_SESSION_REQUIRED_PATH_PREFIXES`.
+   */
+  sessionRequiredPathPrefixes?: string[];
 }
 
 export function registerSessions(app: FastifyInstance, options: SessionOptions): void {
@@ -98,6 +114,8 @@ export function registerSessions(app: FastifyInstance, options: SessionOptions):
     max: SESSION_LIMITS.issuancePerIpPerHour,
     windowMs: SESSION_LIMITS.issuanceWindowMs,
   };
+  const sessionRequiredPathPrefixes =
+    options.sessionRequiredPathPrefixes ?? DEFAULT_SESSION_REQUIRED_PATH_PREFIXES;
 
   // `global: false`: an ordinary request never consumes a slot merely by being
   // routed. The manual check below is invoked only inside the mint branch.
@@ -138,7 +156,28 @@ export function registerSessions(app: FastifyInstance, options: SessionOptions):
     }
     const limitResult = await checkIssuance(request);
     if (!limitResult.isAllowed && limitResult.isExceeded) {
-      sendRateLimited(reply, limitResult.ttlInSeconds);
+      const path = request.url.split('?')[0] ?? request.url;
+      const requiresSession = sessionRequiredPathPrefixes.some((prefix) =>
+        path.startsWith(prefix),
+      );
+
+      if (requiresSession) {
+        // A write served under a throwaway id would create data the caller can never
+        // return to — worse than a refusal — and an owner-scoped read served under
+        // one would leak an empty result that looks like "you have nothing" rather
+        // than "you are refused." Both are refused outright.
+        sendRateLimited(reply, limitResult.ttlInSeconds);
+        return;
+      }
+
+      // Health and the read-only catalog need no identity at all, so refusing them
+      // here buys nothing and turns a busy NAT into a dead site — exactly what D-12
+      // asks this control not to do. Assign a request-scoped id that is never written
+      // into a cookie: request.ownerId stays typed as always-present so no handler on
+      // this path acquires an undefined case, but nothing this "session" touches is
+      // ever recoverable by the caller, which is fine — nothing on these paths is
+      // owner-scoped in the first place.
+      request.ownerId = randomUUID();
       return;
     }
 
