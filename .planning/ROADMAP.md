@@ -202,7 +202,7 @@ Plans:
   4. An operator can restore configurations and artifacts from a backup and can state what retention actually deleted and when.
   5. The launch identity model is decided and recorded: either accounts exist and a user can reach their configurations from a second device, or anonymous-only is a stated launch constraint whose data-loss behaviour is visible in-product.
 
-**Plans**: 6/8 plans executed
+**Plans**: 8/8 plans executed
 
 Plans:
 **Wave 1**
@@ -218,12 +218,12 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 05-06-PLAN.md — The merge gate: the repository's first CI, self-hosted runner, dependency and image scanning (wave 3)
+- [x] 05-06-PLAN.md — The merge gate: the repository's first CI, self-hosted runner, dependency and image scanning (wave 3)
 - [x] 05-07-PLAN.md — OpenTelemetry metrics export with redaction on every sink (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 05-08-PLAN.md — Phase close-out: README known gaps and the consolidated deployment requirements (wave 4)
+- [x] 05-08-PLAN.md — Phase close-out: README known gaps and the consolidated deployment requirements (wave 4)
 
 **Scope notes**: `README.md` § Known gaps names the concrete targets — no global concurrency limit or
 IP rate limiting, no curated smoke matrix (only `crkbd/rev1` has ever really compiled), no real
@@ -285,7 +285,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → **4** → 5 → 6
 | 2. Saved Visual Configurations | n/a (pre-GSD) | Complete | - |
 | 3. Generation and Server Builds | n/a (pre-GSD) | Complete | 2026-08-09 |
 | 4. Verified SOCD Support | 4/5 | In Progress|  |
-| 5. Hardening and Scale | 6/8 | In Progress|  |
+| 5. Hardening and Scale | 8/8 | In Progress|  |
 | 6. Browser Flashing Research and Rollout | 0/TBD | Not started | - |
 
 Phases 0–3 were delivered before this planning directory existed and were not decomposed into GSD
