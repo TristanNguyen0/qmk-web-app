@@ -33,6 +33,8 @@ import {
 } from '../lib/client.ts';
 import { BindingPicker } from './BindingPicker.tsx';
 import { BuildPanel } from './BuildPanel.tsx';
+import { DataLossNotice } from './DataLossNotice.tsx';
+import { ExportConfigurationButton } from './ExportConfigurationButton.tsx';
 import { MacroEditor } from './MacroEditor.tsx';
 import { SocdPanel } from './SocdPanel.tsx';
 
@@ -186,9 +188,12 @@ export function KeymapEditor({
         <button type="button" onClick={() => void persist()} disabled={save.status === 'saving'}>
           Save now
         </button>
+        <ExportConfigurationButton configuration={configuration} />
 
         <SaveIndicator state={save} dirty={state.dirty} />
       </div>
+
+      <DataLossNotice />
 
       {save.status === 'invalid' ? (
         <div className="notice" role="alert">
