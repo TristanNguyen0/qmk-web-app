@@ -20,7 +20,7 @@
  *     validated.
  */
 import { randomUUID } from 'node:crypto';
-import { artifactKey, logKey, type ArtifactStore } from '@qmk-web-app/artifact-store';
+import { artifactKey, buildIdFromKey, logKey, type ArtifactStore } from '@qmk-web-app/artifact-store';
 import type { BuildQueue, ClaimedBuild } from '@qmk-web-app/build-queue';
 import {
   BUILD_LIMITS,
@@ -36,10 +36,35 @@ import { redactLog } from './redact.ts';
 /** Supplies the catalog a build's configuration must be validated against. */
 export type CatalogProvider = (catalogVersion: string, keyboardId: string) => Catalog | null;
 
+/** The outcome of one reaped object's blob delete, for the retention record. */
+export type RetentionOutcome = 'deleted' | 'already-absent' | 'failed';
+
+/** One reaped object in a retention record — a build id, never the storage key. */
+export interface RetentionObjectRecord {
+  buildId: string;
+  kind: 'artifact' | 'log';
+  outcome: RetentionOutcome;
+}
+
+/**
+ * What a retention sweep actually deleted, and when. Conditioned on what `reap()`
+ * returned from the database — not on how many blob deletes succeeded — so a sweep
+ * whose deletes all fail still produces one of these. Never carries a storage key: a
+ * storage key is the one value the product promises never to expose, and an operator
+ * holding a build id can reconstruct it with `artifactKey()`/`logKey()` if they need
+ * to.
+ */
+export interface RetentionRecord {
+  deletedAt: string;
+  buildsExpired: number;
+  objects: readonly RetentionObjectRecord[];
+}
+
 export interface QueueRunnerEvent {
   level: 'info' | 'warn' | 'error';
   message: string;
   buildId?: string;
+  retention?: RetentionRecord;
   [key: string]: unknown;
 }
 
@@ -159,7 +184,12 @@ export class QueueRunner {
    * Housekeeping a worker performs alongside its own builds: recovering builds from
    * dead workers, and deleting expired artifacts and logs from storage.
    */
-  async maintain(): Promise<{ requeued: number; failed: number; objectsDeleted: number }> {
+  async maintain(): Promise<{
+    requeued: number;
+    failed: number;
+    objectsDeleted: number;
+    retention: RetentionRecord | null;
+  }> {
     const reclaimed = await this.#options.queue.reclaimExpiredLeases({
       maxAttempts: BUILD_LIMITS.maxBuildAttempts,
     });
@@ -170,17 +200,48 @@ export class QueueRunner {
       logRetentionMs: BUILD_LIMITS.logRetentionMs,
     });
 
+    // Carry the kind alongside each key so a per-object outcome can be attributed,
+    // rather than a flat concatenation that loses which array a key came from.
+    const objects: Array<{ key: string; kind: 'artifact' | 'log' }> = [
+      ...reaped.artifactKeys.map((key) => ({ key, kind: 'artifact' as const })),
+      ...reaped.logKeys.map((key) => ({ key, kind: 'log' as const })),
+    ];
+
     let objectsDeleted = 0;
-    for (const key of [...reaped.artifactKeys, ...reaped.logKeys]) {
+    const objectRecords: RetentionObjectRecord[] = [];
+    for (const { key, kind } of objects) {
+      // reap() only ever returns keys this process derived from a build id via
+      // artifactKey()/logKey(), so this should always resolve — but the key made a
+      // round trip through the database, so it is validated rather than trusted, and
+      // never falls back to the raw key: that would be exactly the leak this record
+      // exists to prevent.
+      const buildId = buildIdFromKey(key) ?? '(invalid-key)';
+      let outcome: RetentionOutcome;
       try {
-        if (await this.#options.artifacts.delete(key)) objectsDeleted += 1;
+        outcome = (await this.#options.artifacts.delete(key)) ? 'deleted' : 'already-absent';
+        if (outcome === 'deleted') objectsDeleted += 1;
       } catch (error) {
+        outcome = 'failed';
         this.#log({
           level: 'warn',
           message: 'failed to delete expired object',
           error: (error as Error).message,
         });
       }
+      objectRecords.push({ buildId, kind, outcome });
+    }
+
+    // Gated on what was reaped from the database, not on objectsDeleted: a sweep that
+    // deletes rows and then fails every blob delete is exactly the case that must not
+    // be silent, so the record's existence cannot depend on delete success.
+    let retention: RetentionRecord | null = null;
+    if (reaped.artifactKeys.length + reaped.logKeys.length + reaped.buildsExpired > 0) {
+      retention = {
+        deletedAt: new Date().toISOString(),
+        buildsExpired: reaped.buildsExpired,
+        objects: objectRecords,
+      };
+      this.#log({ level: 'info', message: 'retention', retention });
     }
 
     if (reclaimed.requeued > 0 || reclaimed.failed > 0 || objectsDeleted > 0) {
@@ -193,7 +254,7 @@ export class QueueRunner {
       });
     }
 
-    return { ...reclaimed, objectsDeleted };
+    return { ...reclaimed, objectsDeleted, retention };
   }
 
   async #process(claimed: ClaimedBuild): Promise<ProcessOutcome> {
