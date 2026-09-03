@@ -24,7 +24,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import pg from 'pg';
 import { FilesystemArtifactStore } from '@qmk-web-app/artifact-store';
-import { buildApp } from './app.ts';
+import { buildApp, PRODUCTION_LOGGER_OPTIONS } from './app.ts';
 import { parseTrustProxy, requireEnv } from './config.ts';
 import { PostgresBuildStore } from '@qmk-web-app/build-queue';
 import { CatalogStore } from './catalog-store.ts';
@@ -131,7 +131,9 @@ const app = buildApp({
   sessionSecret,
   secureCookies: isProduction,
   trustProxy,
-  logger: true,
+  // Not `logger: true`: Fastify's default request logger writes `remoteAddress` on
+  // every request. See `PRODUCTION_LOGGER_OPTIONS` for why that must never happen.
+  logger: PRODUCTION_LOGGER_OPTIONS,
 });
 
 // `countActiveGlobal()` is the same admission-cap read 05-01 added; the gauge is its

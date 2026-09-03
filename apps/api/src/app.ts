@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyLoggerOptions } from 'fastify';
 import type { ArtifactStore } from '@qmk-web-app/artifact-store';
 import type { CatalogStore } from './catalog-store.ts';
 import type { BuildEnvironment } from './builds/service.ts';
@@ -37,8 +37,33 @@ export interface BuildAppOptions {
   sessionIssuanceLimit?: SessionIssuanceLimit;
   /** See `session.ts#SessionOptions.sessionRequiredPathPrefixes`. */
   sessionRequiredPathPrefixes?: string[];
-  logger?: boolean;
+  /**
+   * `false`/omitted disables Fastify's request logger entirely — the default for
+   * tests, none of which need it. A caller that does want it (server.ts) must pass a
+   * `FastifyLoggerOptions` object rather than `true`: Fastify's own default `req`
+   * serializer includes `remoteAddress`, and this app must never let a client IP reach
+   * a log line (see `PRODUCTION_LOGGER_OPTIONS` below).
+   */
+  logger?: boolean | FastifyLoggerOptions;
 }
+
+/**
+ * The request-logger configuration `server.ts` ships in production. Fastify's default
+ * `req` serializer (`fastify/lib/logger-pino.js`) includes `remoteAddress`/
+ * `remotePort`; overriding it to omit both is a hard Phase 5 requirement — the client
+ * IP is a rate-limit key held in memory and must never reach a log line, a build/
+ * configuration row, or a telemetry attribute (see
+ * `docs/deployment-requirements.md`'s log-sink section). Exported so `server.ts` and
+ * this module's regression test share one definition instead of two copies that could
+ * silently drift apart.
+ */
+export const PRODUCTION_LOGGER_OPTIONS: FastifyLoggerOptions = {
+  serializers: {
+    req(req) {
+      return { method: req.method, url: req.url };
+    },
+  },
+};
 
 export function buildApp(options: BuildAppOptions): FastifyInstance {
   const app = Fastify({
