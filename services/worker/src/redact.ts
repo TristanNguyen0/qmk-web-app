@@ -43,10 +43,16 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-export function redactLog(raw: string, options: RedactOptions = {}): string {
+/**
+ * The path/secret substitution rules, without the log-specific byte-cap truncation.
+ * Both `redactLog` and `redactAttributes` call this — one rule table, applied by every
+ * sink, per `ADR-0001-observability`. A telemetry attribute is a single value, not a
+ * multi-line log, so it has no truncation concept of its own; that stays in `redactLog`.
+ */
+function redactText(raw: string, extraPaths: readonly string[]): string {
   let text = raw;
 
-  for (const path of options.extraPaths ?? []) {
+  for (const path of extraPaths) {
     if (path.length > 1) {
       text = text.replace(new RegExp(`${escapeRegExp(path)}/?`, 'g'), '');
     }
@@ -57,6 +63,11 @@ export function redactLog(raw: string, options: RedactOptions = {}): string {
   for (const [pattern, replacement] of SECRET_PATTERNS) {
     text = text.replace(pattern, replacement);
   }
+  return text;
+}
+
+export function redactLog(raw: string, options: RedactOptions = {}): string {
+  const text = redactText(raw, options.extraPaths ?? []);
 
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_LOG_BYTES;
   const buffer = Buffer.from(text, 'utf8');
@@ -65,4 +76,34 @@ export function redactLog(raw: string, options: RedactOptions = {}): string {
   // Keep the tail: compiler errors appear at the end of the log.
   const kept = buffer.subarray(buffer.byteLength - maxBytes).toString('utf8');
   return `[log truncated to the last ${maxBytes} bytes]\n${kept}`;
+}
+
+export interface RedactAttributesOptions {
+  /** Host paths to strip, e.g. the QMK checkout location. */
+  extraPaths?: readonly string[];
+}
+
+/**
+ * Applies the same path/secret redaction rules `redactLog` uses to structured
+ * attribute values, so an OTel sink inherits the redaction `ADR-0001-observability`
+ * requires of every sink added after the original log-storage call site — see
+ * "Pitfall 5" in `05-RESEARCH.md`. Reuses `redactText` rather than a second copy of
+ * the rules: a duplicated table is exactly the way a new sink stops matching the
+ * original's redaction the first time either one is edited without the other.
+ *
+ * String values are redacted in place; numbers pass through untouched — there is
+ * nothing in a number for these tables to match.
+ */
+export function redactAttributes<T extends Record<string, string | number>>(
+  attributes: T,
+  options: RedactAttributesOptions = {},
+): T {
+  const extraPaths = options.extraPaths ?? [];
+  const result = { ...attributes };
+  for (const [key, value] of Object.entries(result)) {
+    if (typeof value === 'string') {
+      (result as Record<string, string | number>)[key] = redactText(value, extraPaths);
+    }
+  }
+  return result;
 }

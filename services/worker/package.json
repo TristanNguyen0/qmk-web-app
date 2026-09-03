@@ -10,6 +10,10 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/exporter-metrics-otlp-proto": "0.222.0",
+    "@opentelemetry/resources": "2.11.0",
+    "@opentelemetry/sdk-metrics": "2.11.0",
     "@qmk-web-app/artifact-store": "workspace:*",
     "@qmk-web-app/build-queue": "workspace:*",
     "@qmk-web-app/domain": "workspace:*",

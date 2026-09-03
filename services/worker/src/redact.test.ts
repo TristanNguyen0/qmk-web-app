@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { redactLog } from './redact.ts';
+import { redactAttributes, redactLog } from './redact.ts';
 
 describe('log redaction', () => {
   it('strips container-internal paths', () => {
@@ -46,5 +46,51 @@ describe('log redaction', () => {
     expect(Buffer.byteLength(redacted, 'utf8')).toBeLessThan(1024 + 100);
     expect(redacted).toContain('error: the important part');
     expect(redacted).toContain('log truncated');
+  });
+});
+
+describe('redactAttributes', () => {
+  it('applies the same path and secret tables to every string value', () => {
+    const attributes = {
+      note: 'error: /workspace/build/obj_crkbd/keymap.c:14: undefined',
+      token: 'API_TOKEN=xyz',
+    };
+    expect(redactAttributes(attributes)).toEqual({
+      note: 'error: obj_crkbd/keymap.c:14: undefined',
+      token: 'API_TOKEN=[redacted]',
+    });
+  });
+
+  it('leaves numeric values untouched', () => {
+    expect(redactAttributes({ count: 3, durationMs: 4200 })).toEqual({
+      count: 3,
+      durationMs: 4200,
+    });
+  });
+
+  it('produces the same substitution redactLog performs on the same text', () => {
+    const raw = 'reading /workspace/qmkroot/keyboards/crkbd/rev1/rev1.c';
+    expect(redactAttributes({ note: raw }).note).toBe(redactLog(raw));
+  });
+
+  it('strips a container path from an attribute value, matching redactLog', () => {
+    const raw = '/workspace/tmp/build-scratch/obj/keymap.o';
+    const attributeResult = redactAttributes({ path: raw }).path;
+    expect(attributeResult).toBe(redactLog(raw));
+    expect(attributeResult).not.toContain('/workspace/tmp/');
+  });
+
+  it('strips host paths passed in as extraPaths, the same way redactLog does', () => {
+    const raw = '/home/tristan/dev/qmk-web-app/.cache/qmk/abc123/quantum/keymap.h';
+    const extraPaths = ['/home/tristan/dev/qmk-web-app/.cache/qmk/abc123'];
+    expect(redactAttributes({ note: raw }, { extraPaths })).toEqual({
+      note: redactLog(raw, { extraPaths }),
+    });
+  });
+
+  it('does not mutate the input record', () => {
+    const attributes = { note: 'API_TOKEN=xyz' };
+    redactAttributes(attributes);
+    expect(attributes.note).toBe('API_TOKEN=xyz');
   });
 });

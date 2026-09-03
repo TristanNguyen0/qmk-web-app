@@ -30,6 +30,12 @@ import {
   type Catalog,
 } from '@qmk-web-app/domain';
 import type { BuildSandbox, SandboxLimits } from '@qmk-web-app/qmk-sandbox';
+import {
+  recordBuildCompleted,
+  recordBuildDuration,
+  recordBuildFailed,
+  recordWorkerHeartbeat,
+} from './observability/metrics.ts';
 import { runBuild } from './run-build.ts';
 import { redactLog } from './redact.ts';
 
@@ -116,12 +122,22 @@ export class QueueRunner {
     this.#options.log?.(event);
   }
 
+  /** Routes a metrics recording failure through this worker's own structured log. */
+  #metricsLog(event: { level: 'warn'; message: string; error?: string }): void {
+    this.#log({ level: 'warn', message: `telemetry: ${event.message}`, error: event.error });
+  }
+
   /**
    * Claims and processes at most one build. Returns `idle` when the queue was empty.
    * Exposed separately from `start()` so tests drive the loop deterministically rather
    * than racing a timer.
    */
   async runOnce(): Promise<ProcessOutcome> {
+    // Every call to runOnce() is a loop tick, whether or not it finds a build to claim
+    // — liveness is answered by "is this still increasing", not by "is this worker
+    // busy".
+    recordWorkerHeartbeat(this.#options.workerId, { log: (event) => this.#metricsLog(event) });
+
     const claimed = await this.#options.queue.claim({
       workerId: this.#options.workerId,
       leaseMs: this.#options.leaseMs,
@@ -190,6 +206,8 @@ export class QueueRunner {
     objectsDeleted: number;
     retention: RetentionRecord | null;
   }> {
+    recordWorkerHeartbeat(this.#options.workerId, { log: (event) => this.#metricsLog(event) });
+
     const reclaimed = await this.#options.queue.reclaimExpiredLeases({
       maxAttempts: BUILD_LIMITS.maxBuildAttempts,
     });
@@ -364,6 +382,11 @@ export class QueueRunner {
         generatorVersion: result.generatorVersion,
       });
       if (!failed) throw new LeaseLost();
+      const metricsLog = (event: { level: 'warn'; message: string; error?: string }): void =>
+        this.#metricsLog(event);
+      recordBuildCompleted('failed', { log: metricsLog });
+      recordBuildFailed(result.failureCode, { log: metricsLog });
+      recordBuildDuration(result.durationMs, 'failed', { log: metricsLog });
       return 'failed';
     }
 
@@ -417,6 +440,10 @@ export class QueueRunner {
       sha256: result.artifact.sha256,
       durationMs: result.durationMs,
     });
+    const metricsLog = (event: { level: 'warn'; message: string; error?: string }): void =>
+      this.#metricsLog(event);
+    recordBuildCompleted('succeeded', { log: metricsLog });
+    recordBuildDuration(result.durationMs, 'succeeded', { log: metricsLog });
     return 'succeeded';
   }
 
@@ -438,6 +465,7 @@ export class QueueRunner {
     });
     if (!cancelled) throw new LeaseLost();
     this.#log({ level: 'info', message: 'build cancelled', buildId });
+    recordBuildCompleted('cancelled', { log: (event) => this.#metricsLog(event) });
     return 'cancelled';
   }
 
@@ -478,6 +506,10 @@ export class QueueRunner {
     });
     if (!failed) throw new LeaseLost();
     this.#log({ level: 'info', message: 'build failed', buildId, failureCode });
+    const metricsLog = (event: { level: 'warn'; message: string; error?: string }): void =>
+      this.#metricsLog(event);
+    recordBuildCompleted('failed', { log: metricsLog });
+    recordBuildFailed(failureCode, { log: metricsLog });
   }
 
   /** As `#fail`, but never throws — used on the unhandled-error path. */

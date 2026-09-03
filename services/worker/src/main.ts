@@ -10,6 +10,9 @@
  *                       In deployment this must be the narrow `qwa_worker` role from
  *                       apps/api/migrations/003_worker_role.sql, not the API's role.
  *   QWA_WORKER_ID       default a random id per process
+ *   QWA_OTEL_EXPORTER_URL  OTLP/HTTP metrics collector endpoint. Unset disables
+ *                       telemetry entirely (see observability/otel.ts) — no collector
+ *                       is required to run this process.
  *
  * The worker never runs migrations: schema ownership belongs to the API, and a worker
  * with DDL rights would defeat the point of the restricted role.
@@ -24,6 +27,7 @@ import { PostgresBuildStore } from '@qmk-web-app/build-queue';
 import { MODULE_REGISTRY } from '@qmk-web-app/domain';
 import { DockerSandbox } from '@qmk-web-app/qmk-sandbox';
 import { loadPublishedCatalogs } from './catalog-provider.ts';
+import { shutdownTelemetry, startTelemetry } from './observability/otel.ts';
 import { QueueRunner, type QueueRunnerEvent } from './queue-runner.ts';
 import { buildImageRef, loadManifest, qmkSourcePath, REPO_ROOT } from '../../../infra/qmk/manifest.ts';
 
@@ -45,6 +49,19 @@ function log(event: QueueRunnerEvent): void {
   const { level, ...rest } = event;
   console.log(JSON.stringify({ level, worker: workerId, time: new Date().toISOString(), ...rest }));
 }
+
+// Started before the runner: everything downstream that records a metric only ever
+// does so lazily (see observability/metrics.ts's header for why), so start order
+// relative to runner construction does not strictly matter — but starting here, once,
+// up front is the simplest place that is unambiguously "before anything could try to
+// record".
+const telemetry = startTelemetry({
+  // A fresh object literal at this call site, not the `log` function reference itself
+  // — `TelemetryWarnEvent` and `QueueRunnerEvent` are both plain interfaces, and only a
+  // fresh literal gets TypeScript's implicit index-signature match against
+  // `QueueRunnerEvent`'s `[key: string]: unknown`.
+  log: (event) => log({ level: event.level, message: event.message, detail: event.detail }),
+});
 
 if (!existsSync(catalogDir)) {
   console.error(
@@ -116,7 +133,13 @@ const runner = new QueueRunner({
   log,
 });
 
-log({ level: 'info', message: 'worker started', catalogVersions: versions, artifactDir });
+log({
+  level: 'info',
+  message: 'worker started',
+  catalogVersions: versions,
+  artifactDir,
+  telemetry: telemetry.enabled,
+});
 
 const maintenance = setInterval(() => {
   void runner.maintain().catch((error: Error) => {
@@ -138,4 +161,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 
 await runner.start();
 await pool.end();
+// Flush the last export window before the process exits, alongside the existing
+// cleanup — otherwise a shutdown can drop up to one full collection interval.
+await shutdownTelemetry();
 log({ level: 'info', message: 'worker stopped' });
