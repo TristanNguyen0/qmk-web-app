@@ -57,6 +57,12 @@ export interface BuildSummary {
 }
 
 /**
+ * claude.md § Build isolation and security: "Limit concurrent builds per user/IP/
+ * session and globally." The concurrency limit is the one that protects the workers;
+ * the hourly limit is what stops a session from cycling through them all day; the
+ * global limit is what stops any number of sessions, each individually within their
+ * own allowance, from burying the single build host together.
+ *
  * Which admission predicate rejected a build request. `global_active` is the
  * queue-depth cap shared by every owner; `owner_active` and `owner_hourly` are the two
  * per-owner caps. Named so the caller can build a specific, user-safe message without

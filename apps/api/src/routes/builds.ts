@@ -15,12 +15,7 @@ import { DomainError, ERROR_CODES } from '@qmk-web-app/domain';
 import type { CatalogStore } from '../catalog-store.ts';
 import type { ConfigurationRepository } from '../configurations/types.ts';
 import { API_VERSION, sendBadRequest, sendDomainError, sendNotFound } from '../errors.ts';
-import {
-  assertWithinQuota,
-  prepareBuild,
-  IDEMPOTENCY_KEY_RE,
-  type BuildEnvironment,
-} from '../builds/service.ts';
+import { prepareBuild, IDEMPOTENCY_KEY_RE, type BuildEnvironment } from '../builds/service.ts';
 import type { BuildAdmissionCap, BuildRepository } from '@qmk-web-app/build-queue';
 
 /**
@@ -102,8 +97,6 @@ export function registerBuildRoutes(app: FastifyInstance, options: BuildRoutesOp
       if (!configuration) return sendNotFound(reply, 'no such configuration');
 
       try {
-        await assertWithinQuota(builds, request.ownerId);
-
         const record = prepareBuild(store, {
           configuration,
           ownerId: request.ownerId,

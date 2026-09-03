@@ -14,19 +14,12 @@
  * had enough information to give immediately.
  */
 import { randomUUID } from 'node:crypto';
-import {
-  BUILD_LIMITS,
-  DomainError,
-  ERROR_CODES,
-  validateConfiguration,
-  type BuildRecord,
-} from '@qmk-web-app/domain';
+import { DomainError, ERROR_CODES, validateConfiguration, type BuildRecord } from '@qmk-web-app/domain';
 import { GENERATOR_VERSION } from '@qmk-web-app/qmk-generator';
 import type { CatalogStore } from '../catalog-store.ts';
 import { CatalogNotFoundError } from '../catalog-store.ts';
 import { catalogFor } from '../configurations/service.ts';
 import type { ConfigurationRecord } from '../configurations/types.ts';
-import type { BuildRepository } from '@qmk-web-app/build-queue';
 
 /**
  * Idempotency keys are echoed nowhere and used only as a unique index value, but they
@@ -108,33 +101,4 @@ export function prepareBuild(store: CatalogStore, args: PrepareBuildArgs): Build
     logReference: null,
     failureCode: null,
   };
-}
-
-/**
- * Enforces the per-session build quotas.
- *
- * claude.md § Build isolation and security: "Limit concurrent builds per user/IP/
- * session and globally." The concurrency limit is the one that protects the workers;
- * the hourly limit is what stops a session from cycling through them all day.
- */
-export async function assertWithinQuota(
-  repository: BuildRepository,
-  ownerId: string,
-): Promise<void> {
-  const active = await repository.countActiveForOwner(ownerId);
-  if (active >= BUILD_LIMITS.maxActiveBuildsPerOwner) {
-    throw new DomainError(
-      ERROR_CODES.BUILD_QUEUE_LIMITED,
-      `you already have ${active} builds queued or running; wait for one to finish or cancel it`,
-    );
-  }
-
-  const since = new Date(Date.now() - 60 * 60 * 1000);
-  const recent = await repository.countRequestedSince(ownerId, since);
-  if (recent >= BUILD_LIMITS.maxBuildsPerOwnerPerHour) {
-    throw new DomainError(
-      ERROR_CODES.BUILD_QUEUE_LIMITED,
-      'you have reached the hourly build limit; try again later',
-    );
-  }
 }
