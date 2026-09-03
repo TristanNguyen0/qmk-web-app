@@ -15,6 +15,7 @@ import { buildApp } from '../app.ts';
 import { InMemoryBuildStore } from '@qmk-web-app/build-queue';
 import { CatalogStore } from '../catalog-store.ts';
 import { InMemoryConfigurationRepository } from '../configurations/memory-repository.ts';
+import { globalCapacityMessage, ownerConcurrencyMessage, ownerHourlyMessage } from './builds.ts';
 
 const catalog = readCatalogSample() as Catalog;
 const SECRET = 'test-secret-that-is-long-enough-to-pass-0123';
@@ -230,6 +231,31 @@ describe('POST /v1/configurations/:id/builds', () => {
     for (let i = 0; i < BUILD_LIMITS.maxActiveBuildsPerOwner; i += 1) {
       expect((await requestBuild(cookie, configurationId)).statusCode).toBe(201);
     }
+  });
+
+  it('rejects a build over the global queue-depth cap with a capacity message, not a personal-quota one', async () => {
+    // One build per session, spread across BUILD_LIMITS.maxGlobalActiveBuilds distinct
+    // sessions, so no per-owner cap (2) intervenes before the global one does.
+    for (let i = 0; i < BUILD_LIMITS.maxGlobalActiveBuilds; i += 1) {
+      const cookie = await newSession();
+      const configurationId = await createConfiguration(cookie);
+      expect((await requestBuild(cookie, configurationId)).statusCode).toBe(201);
+    }
+
+    const outsider = await newSession();
+    const outsiderConfigurationId = await createConfiguration(outsider);
+    const rejected = await requestBuild(outsider, outsiderConfigurationId);
+
+    expect(rejected.statusCode).toBe(429);
+    expect(rejected.json()['error']['code']).toBe('BUILD_QUEUE_LIMITED');
+    // The global rejection must not blame the caller: it must not read like either of
+    // the two per-owner messages, and must read like the capacity message instead.
+    const message = rejected.json()['error']['message'] as string;
+    expect(message).toBe(globalCapacityMessage());
+    expect(message).not.toBe(ownerConcurrencyMessage(0));
+    expect(message).not.toBe(ownerConcurrencyMessage(1));
+    expect(message).not.toBe(ownerConcurrencyMessage(2));
+    expect(message).not.toBe(ownerHourlyMessage());
   });
 
   it('does not queue a build for another session’s configuration', async () => {

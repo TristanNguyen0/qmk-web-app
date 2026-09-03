@@ -12,8 +12,9 @@
  * contract test is what checks the real one actually provides them.
  */
 import type { ArtifactRecord, BuildRecord, BuildStatus, Configuration } from '@qmk-web-app/domain';
-import { assertTransition, canTransition, isTerminal } from '@qmk-web-app/domain';
+import { assertTransition, BUILD_LIMITS, canTransition, isTerminal } from '@qmk-web-app/domain';
 import type {
+  BuildAdmissionCap,
   BuildQueue,
   BuildRepository,
   BuildSummary,
@@ -52,14 +53,67 @@ export class InMemoryBuildStore implements BuildRepository, BuildQueue {
 
   // ---------------------------------------------------------------- repository
 
+  // No lock is needed here: the JavaScript event loop already serialises every
+  // synchronous section of this method between `await`s, so there is no window for a
+  // second `create()` call to interleave with the counts computed below. This store
+  // exists so route and worker tests stay hermetic — its job is to *agree* with
+  // Postgres, which the shared contract suite (`store-contract.test.ts`) is what
+  // enforces.
   async create(record: BuildRecord): Promise<CreateBuildResult> {
+    // A retry must never become a rejection: check for an existing build under this
+    // key before any cap is consulted, mirroring the Postgres store's ordering.
     const existing = [...this.#builds.values()].find(
       (b) => b.ownerId === record.ownerId && b.idempotencyKey === record.idempotencyKey,
     );
-    if (existing) return { build: structuredClone(existing), created: false };
+    if (existing) return { outcome: 'replayed', build: structuredClone(existing) };
+
+    const globalActive = [...this.#builds.values()].filter((b) => !isTerminal(b.status)).length;
+    const ownerActive = [...this.#builds.values()].filter(
+      (b) => b.ownerId === record.ownerId && !isTerminal(b.status),
+    ).length;
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const ownerHourly = [...this.#builds.values()].filter(
+      (b) => b.ownerId === record.ownerId && b.requestedAt >= hourAgo,
+    ).length;
+
+    const rejection = this.#firstRejection({ globalActive, ownerActive, ownerHourly });
+    if (rejection) return rejection;
 
     this.#builds.set(record.id, structuredClone(record));
-    return { build: structuredClone(record), created: true };
+    return { outcome: 'created', build: structuredClone(record) };
+  }
+
+  /** The first admission cap (global, then per-owner) that is at or over its limit. */
+  #firstRejection(counts: {
+    globalActive: number;
+    ownerActive: number;
+    ownerHourly: number;
+  }): { outcome: 'rejected'; cap: BuildAdmissionCap; observed: number; limit: number } | null {
+    if (counts.globalActive >= BUILD_LIMITS.maxGlobalActiveBuilds) {
+      return {
+        outcome: 'rejected',
+        cap: 'global_active',
+        observed: counts.globalActive,
+        limit: BUILD_LIMITS.maxGlobalActiveBuilds,
+      };
+    }
+    if (counts.ownerActive >= BUILD_LIMITS.maxActiveBuildsPerOwner) {
+      return {
+        outcome: 'rejected',
+        cap: 'owner_active',
+        observed: counts.ownerActive,
+        limit: BUILD_LIMITS.maxActiveBuildsPerOwner,
+      };
+    }
+    if (counts.ownerHourly >= BUILD_LIMITS.maxBuildsPerOwnerPerHour) {
+      return {
+        outcome: 'rejected',
+        cap: 'owner_hourly',
+        observed: counts.ownerHourly,
+        limit: BUILD_LIMITS.maxBuildsPerOwnerPerHour,
+      };
+    }
+    return null;
   }
 
   async get(id: string, ownerId: string): Promise<BuildRecord | null> {
@@ -107,6 +161,10 @@ export class InMemoryBuildStore implements BuildRepository, BuildQueue {
     return [...this.#builds.values()].filter(
       (b) => b.ownerId === ownerId && !isTerminal(b.status),
     ).length;
+  }
+
+  async countActiveGlobal(): Promise<number> {
+    return [...this.#builds.values()].filter((b) => !isTerminal(b.status)).length;
   }
 
   async countRequestedSince(ownerId: string, since: Date): Promise<number> {

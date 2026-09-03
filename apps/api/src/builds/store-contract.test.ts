@@ -13,7 +13,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import pg from 'pg';
-import type { BuildRecord, Configuration } from '@qmk-web-app/domain';
+import { BUILD_LIMITS, type BuildRecord, type Configuration } from '@qmk-web-app/domain';
 import { runMigrations } from '../db/migrate.ts';
 import { InMemoryConfigurationRepository } from '../configurations/memory-repository.ts';
 import { PostgresConfigurationRepository } from '../configurations/postgres-repository.ts';
@@ -127,6 +127,27 @@ function buildRecord(
   };
 }
 
+/**
+ * Most scenarios in this suite exercise builds that stay comfortably under every cap;
+ * a rejection there is a test-setup bug, not the behavior under test. Unwraps to the
+ * `created`/`replayed` shape so call sites can keep destructuring `.build` — the
+ * admission-control scenarios call `builds.create()` directly instead, where a
+ * `rejected` outcome is exactly what is being asserted.
+ */
+async function createBuild(
+  repo: BuildRepository,
+  record: BuildRecord,
+): Promise<{ build: BuildRecord; outcome: 'created' | 'replayed' }> {
+  const result = await repo.create(record);
+  if (result.outcome === 'rejected') {
+    throw new Error(
+      `unexpected admission rejection in test setup: cap=${result.cap} ` +
+        `observed=${result.observed} limit=${result.limit}`,
+    );
+  }
+  return result;
+}
+
 interface Backend {
   builds: BuildRepository & BuildQueue;
   configurations: ConfigurationRepository;
@@ -166,19 +187,19 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
 
     describe('creation and idempotency', () => {
       it('creates a build and reports it as new', async () => {
-        const result = await builds.create(buildRecord(configurationId, ALICE));
-        expect(result.created).toBe(true);
+        const result = await createBuild(builds, buildRecord(configurationId, ALICE));
+        expect(result.outcome).toBe('created');
         expect(result.build.status).toBe('queued');
       });
 
       it('returns the existing build for a repeated idempotency key', async () => {
         const record = buildRecord(configurationId, ALICE);
-        const first = await builds.create(record);
+        const first = await createBuild(builds, record);
         // A retried submission carries the same key but a fresh build id; the store
         // must return the original rather than creating a second compile.
-        const second = await builds.create({ ...record, id: randomUUID() });
+        const second = await createBuild(builds, { ...record, id: randomUUID() });
 
-        expect(second.created).toBe(false);
+        expect(second.outcome).toBe('replayed');
         expect(second.build.id).toBe(first.build.id);
       });
 
@@ -187,25 +208,25 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
         const aliceConfig = configurationId;
         const bobConfig = await backend.seedConfiguration(BOB);
 
-        await builds.create(buildRecord(aliceConfig, ALICE, { idempotencyKey: key }));
-        const bob = await builds.create(buildRecord(bobConfig, BOB, { idempotencyKey: key }));
+        await createBuild(builds, buildRecord(aliceConfig, ALICE, { idempotencyKey: key }));
+        const bob = await createBuild(builds, buildRecord(bobConfig, BOB, { idempotencyKey: key }));
 
         // Otherwise one session could occupy another session's key namespace, or probe
         // which keys it had used.
-        expect(bob.created).toBe(true);
+        expect(bob.outcome).toBe('created');
       });
     });
 
     describe('ownership', () => {
       it('hides another owner’s build entirely', async () => {
-        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        const { build } = await createBuild(builds, buildRecord(configurationId, ALICE));
         expect(await builds.get(build.id, BOB)).toBeNull();
         expect(await builds.getArtifact(build.id, BOB)).toBeNull();
         expect(await builds.requestCancellation(build.id, BOB)).toBeNull();
       });
 
       it('does not list another owner’s builds for the same configuration', async () => {
-        await builds.create(buildRecord(configurationId, ALICE));
+        await createBuild(builds, buildRecord(configurationId, ALICE));
         const page = await builds.listForConfiguration(configurationId, BOB, {
           page: 1,
           pageSize: 10,
@@ -214,7 +235,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
       });
 
       it('refuses an artifact to a different owner even after success', async () => {
-        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        const { build } = await createBuild(builds, buildRecord(configurationId, ALICE));
         await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
         await toUploading(builds, build.id);
         await builds.complete({
@@ -236,7 +257,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
 
     describe('queue', () => {
       it('hands one build to exactly one worker', async () => {
-        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        const { build } = await createBuild(builds, buildRecord(configurationId, ALICE));
 
         const first = await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
         const second = await builds.claim({ workerId: OTHER_WORKER, leaseMs: 60_000 });
@@ -248,12 +269,12 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
       });
 
       it('claims in request order', async () => {
-        const older = await builds.create(
+        const older = await createBuild(builds,
           buildRecord(configurationId, ALICE, {
             requestedAt: new Date(Date.now() - 60_000).toISOString(),
           }),
         );
-        const newer = await builds.create(buildRecord(configurationId, ALICE));
+        const newer = await createBuild(builds, buildRecord(configurationId, ALICE));
 
         expect((await builds.claim({ workerId: WORKER, leaseMs: 60_000 }))?.buildId).toBe(
           older.build.id,
@@ -264,7 +285,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
       });
 
       it('records the attempt and moves the build to preparing', async () => {
-        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        const { build } = await createBuild(builds, buildRecord(configurationId, ALICE));
         const claimed = await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
 
         expect(claimed?.attemptCount).toBe(1);
@@ -278,7 +299,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
       });
 
       it('refuses writes from a worker that does not hold the lease', async () => {
-        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        const { build } = await createBuild(builds, buildRecord(configurationId, ALICE));
         await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
 
         // This is the property that makes an expired lease safe: the old worker cannot
@@ -305,7 +326,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
       });
 
       it('refuses an advance from a status the build is not in', async () => {
-        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        const { build } = await createBuild(builds, buildRecord(configurationId, ALICE));
         await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
         expect(
           await builds.advance({
@@ -318,7 +339,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
       });
 
       it('throws rather than performing an illegal transition', async () => {
-        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        const { build } = await createBuild(builds, buildRecord(configurationId, ALICE));
         await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
         await expect(
           builds.advance({
@@ -331,7 +352,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
       });
 
       it('reports a cancellation request through the heartbeat', async () => {
-        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        const { build } = await createBuild(builds, buildRecord(configurationId, ALICE));
         await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
 
         expect(
@@ -348,7 +369,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
       });
 
       it('cancels a queued build outright, and it is never claimed', async () => {
-        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        const { build } = await createBuild(builds, buildRecord(configurationId, ALICE));
         expect(await builds.requestCancellation(build.id, ALICE)).toBe('cancelled');
 
         expect(await builds.claim({ workerId: WORKER, leaseMs: 60_000 })).toBeNull();
@@ -356,7 +377,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
       });
 
       it('keeps the log of a build cancelled mid-compile', async () => {
-        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        const { build } = await createBuild(builds, buildRecord(configurationId, ALICE));
         await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
         await builds.requestCancellation(build.id, ALICE);
 
@@ -373,7 +394,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
       });
 
       it('treats cancelling a finished build as a no-op', async () => {
-        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        const { build } = await createBuild(builds, buildRecord(configurationId, ALICE));
         await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
         await builds.fail({
           buildId: build.id,
@@ -385,7 +406,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
       });
 
       it('requeues a build whose lease expired, then fails it once attempts run out', async () => {
-        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        const { build } = await createBuild(builds, buildRecord(configurationId, ALICE));
 
         // A lease of 0 ms is already expired when the reclaimer runs.
         await builds.claim({ workerId: WORKER, leaseMs: 0 });
@@ -407,7 +428,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
       });
 
       it('leaves a live lease alone', async () => {
-        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        const { build } = await createBuild(builds, buildRecord(configurationId, ALICE));
         await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
         expect(await builds.reclaimExpiredLeases({ maxAttempts: 3 })).toEqual({
           requeued: 0,
@@ -419,7 +440,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
 
     describe('completion', () => {
       it('records the artifact and the reproducibility triple', async () => {
-        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        const { build } = await createBuild(builds, buildRecord(configurationId, ALICE));
         await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
         await toUploading(builds, build.id);
 
@@ -450,7 +471,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
       });
 
       it('records a SOCD module version and reports it on the summary', async () => {
-        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        const { build } = await createBuild(builds, buildRecord(configurationId, ALICE));
         await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
         await toUploading(builds, build.id);
 
@@ -476,7 +497,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
       });
 
       it('records a null SOCD module version for a build that did not enable SOCD', async () => {
-        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        const { build } = await createBuild(builds, buildRecord(configurationId, ALICE));
         await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
         await toUploading(builds, build.id);
 
@@ -502,7 +523,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
       });
 
       it('refuses to complete a build that has not reached uploading', async () => {
-        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        const { build } = await createBuild(builds, buildRecord(configurationId, ALICE));
         await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
 
         // Otherwise a worker could report success without ever collecting an artifact.
@@ -523,7 +544,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
       });
 
       it('surfaces a failure code and its log reference', async () => {
-        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        const { build } = await createBuild(builds, buildRecord(configurationId, ALICE));
         await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
         expect(
           await builds.fail({
@@ -543,8 +564,8 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
 
     describe('quotas', () => {
       it('counts only in-flight builds as active', async () => {
-        const first = await builds.create(buildRecord(configurationId, ALICE));
-        await builds.create(buildRecord(configurationId, ALICE));
+        const first = await createBuild(builds, buildRecord(configurationId, ALICE));
+        await createBuild(builds, buildRecord(configurationId, ALICE));
         expect(await builds.countActiveForOwner(ALICE)).toBe(2);
 
         await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
@@ -560,21 +581,48 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
       });
 
       it('counts builds requested since a cutoff', async () => {
-        await builds.create(
+        await createBuild(builds,
           buildRecord(configurationId, ALICE, {
             requestedAt: new Date(Date.now() - 7_200_000).toISOString(),
           }),
         );
-        await builds.create(buildRecord(configurationId, ALICE));
+        await createBuild(builds, buildRecord(configurationId, ALICE));
 
         const oneHourAgo = new Date(Date.now() - 3_600_000);
         expect(await builds.countRequestedSince(ALICE, oneHourAgo)).toBe(1);
+      });
+
+      it('rejects a build once the global queue-depth cap is reached, naming the cap', async () => {
+        const cap = BUILD_LIMITS.maxGlobalActiveBuilds;
+        // Spread across distinct owners so no per-owner cap intervenes first — this
+        // test is about the global cap alone. `maxActiveBuildsPerOwner` (2) is well
+        // under `cap`, so two owners cannot host `cap` active builds between them;
+        // one owner per build sidesteps that entirely.
+        for (let i = 0; i < cap; i += 1) {
+          const ownerId = randomUUID();
+          const ownerConfigId = await backend.seedConfiguration(ownerId);
+          await createBuild(builds, buildRecord(ownerConfigId, ownerId));
+        }
+        expect(await builds.countActiveGlobal()).toBe(cap);
+
+        const outsider = randomUUID();
+        const outsiderConfigId = await backend.seedConfiguration(outsider);
+        const result = await builds.create(buildRecord(outsiderConfigId, outsider));
+
+        expect(result.outcome).toBe('rejected');
+        if (result.outcome !== 'rejected') throw new Error('expected a rejection');
+        expect(result.cap).toBe('global_active');
+        expect(result.limit).toBe(cap);
+        expect(result.observed).toBe(cap);
+
+        // The cap held, not "held approximately": no extra row appeared.
+        expect(await builds.countActiveGlobal()).toBe(cap);
       });
     });
 
     describe('retention', () => {
       it('expires an artifact, marks the build expired, and hands back the key', async () => {
-        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        const { build } = await createBuild(builds, buildRecord(configurationId, ALICE));
         await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
         await toUploading(builds, build.id);
 
@@ -606,7 +654,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
       });
 
       it('drops log references past the retention window', async () => {
-        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        const { build } = await createBuild(builds, buildRecord(configurationId, ALICE));
         await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
         await builds.fail({
           buildId: build.id,
@@ -622,7 +670,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
       });
 
       it('keeps a log that is still inside the window', async () => {
-        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        const { build } = await createBuild(builds, buildRecord(configurationId, ALICE));
         await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
         await builds.fail({
           buildId: build.id,
@@ -637,7 +685,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
 
     describe('build input', () => {
       it('returns the exact revision document the build cites', async () => {
-        const { build } = await builds.create(buildRecord(configurationId, ALICE));
+        const { build } = await createBuild(builds, buildRecord(configurationId, ALICE));
         const input = await builds.getBuildInput(build.id);
         expect(input?.configuration.keyboardId).toBe('crkbd/rev1');
         expect(input?.catalogVersion).toBe('0.33.13-1');
