@@ -592,6 +592,115 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
         expect(await builds.countRequestedSince(ALICE, oneHourAgo)).toBe(1);
       });
 
+      it('rejects a build once the per-owner concurrency cap is reached, naming the cap', async () => {
+        const cap = BUILD_LIMITS.maxActiveBuildsPerOwner;
+        for (let i = 0; i < cap; i += 1) {
+          await createBuild(builds, buildRecord(configurationId, ALICE));
+        }
+
+        const result = await builds.create(buildRecord(configurationId, ALICE));
+        expect(result.outcome).toBe('rejected');
+        if (result.outcome !== 'rejected') throw new Error('expected a rejection');
+        expect(result.cap).toBe('owner_active');
+        expect(result.observed).toBe(cap);
+        expect(result.limit).toBe(cap);
+      });
+
+      it('rejects a build once the per-owner hourly cap is reached, naming the cap', async () => {
+        const hourlyCap = BUILD_LIMITS.maxBuildsPerOwnerPerHour;
+        // Cycle through the (much smaller) owner_active cap so each request is
+        // immediately failed and frees its slot, letting hourlyCap total requests
+        // accumulate within the rolling hour without the concurrency cap intervening
+        // first.
+        for (let i = 0; i < hourlyCap; i += 1) {
+          const { build } = await createBuild(builds, buildRecord(configurationId, ALICE));
+          await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
+          await builds.fail({
+            buildId: build.id,
+            workerId: WORKER,
+            failureCode: 'COMPILE_FAILED',
+            logReference: null,
+          });
+        }
+        expect(
+          await builds.countRequestedSince(ALICE, new Date(Date.now() - 3_600_000)),
+        ).toBe(hourlyCap);
+
+        const result = await builds.create(buildRecord(configurationId, ALICE));
+        expect(result.outcome).toBe('rejected');
+        if (result.outcome !== 'rejected') throw new Error('expected a rejection');
+        expect(result.cap).toBe('owner_hourly');
+        expect(result.observed).toBe(hourlyCap);
+        expect(result.limit).toBe(hourlyCap);
+      });
+
+      it('does not count a build outside the rolling hour toward the hourly cap', async () => {
+        const hourlyCap = BUILD_LIMITS.maxBuildsPerOwnerPerHour;
+        // Safely outside the window — must not consume a slot in the cap. (A build
+        // requested exactly one hour and one millisecond ago is outside the window;
+        // this uses a wider margin to stay clear of test/DB clock skew.) Failed
+        // immediately so it also frees its owner_active slot, same as every build in
+        // the loop below.
+        const { build: outsideBuild } = await createBuild(
+          builds,
+          buildRecord(configurationId, ALICE, {
+            requestedAt: new Date(Date.now() - 3_600_000 - 5000).toISOString(),
+          }),
+        );
+        await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
+        await builds.fail({
+          buildId: outsideBuild.id,
+          workerId: WORKER,
+          failureCode: 'COMPILE_FAILED',
+          logReference: null,
+        });
+        // hourlyCap - 1 builds safely inside the window, each immediately failed so
+        // none of them collide with the much smaller owner_active cap.
+        for (let i = 0; i < hourlyCap - 1; i += 1) {
+          const { build } = await createBuild(
+            builds,
+            buildRecord(configurationId, ALICE, {
+              requestedAt: new Date(Date.now() - 60_000).toISOString(),
+            }),
+          );
+          await builds.claim({ workerId: WORKER, leaseMs: 60_000 });
+          await builds.fail({
+            buildId: build.id,
+            workerId: WORKER,
+            failureCode: 'COMPILE_FAILED',
+            logReference: null,
+          });
+        }
+        // The in-window count is hourlyCap - 1, so this request is admitted. If the
+        // outside build had counted, this would already be the hourlyCap+1th request
+        // and would be rejected instead.
+        const result = await builds.create(buildRecord(configurationId, ALICE));
+        expect(result.outcome).toBe('created');
+      });
+
+      it('does not let one owner’s cap rejection affect another owner', async () => {
+        for (let i = 0; i < BUILD_LIMITS.maxActiveBuildsPerOwner; i += 1) {
+          await createBuild(builds, buildRecord(configurationId, ALICE));
+        }
+        const aliceRejected = await builds.create(buildRecord(configurationId, ALICE));
+        expect(aliceRejected.outcome).toBe('rejected');
+
+        const bobConfigId = await backend.seedConfiguration(BOB);
+        const bobResult = await builds.create(buildRecord(bobConfigId, BOB));
+        expect(bobResult.outcome).toBe('created');
+      });
+
+      it('leaves no row and no count change when a per-owner cap rejects a request', async () => {
+        for (let i = 0; i < BUILD_LIMITS.maxActiveBuildsPerOwner; i += 1) {
+          await createBuild(builds, buildRecord(configurationId, ALICE));
+        }
+        const before = await builds.countActiveForOwner(ALICE);
+
+        const result = await builds.create(buildRecord(configurationId, ALICE));
+        expect(result.outcome).toBe('rejected');
+        expect(await builds.countActiveForOwner(ALICE)).toBe(before);
+      });
+
       it('rejects a build once the global queue-depth cap is reached, naming the cap', async () => {
         const cap = BUILD_LIMITS.maxGlobalActiveBuilds;
         // Spread across distinct owners so no per-owner cap intervenes first — this

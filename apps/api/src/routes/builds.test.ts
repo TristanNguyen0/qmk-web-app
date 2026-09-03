@@ -219,6 +219,11 @@ describe('POST /v1/configurations/:id/builds', () => {
     const rejected = await requestBuild(cookie, configurationId);
     expect(rejected.statusCode).toBe(429);
     expect(rejected.json()['error']['code']).toBe('BUILD_QUEUE_LIMITED');
+    // The message names the caller's own build count — this is a per-owner
+    // rejection, not the capacity-worded global one.
+    expect(rejected.json()['error']['message']).toBe(
+      ownerConcurrencyMessage(BUILD_LIMITS.maxActiveBuildsPerOwner),
+    );
   });
 
   it('frees a quota slot when a build finishes', async () => {
