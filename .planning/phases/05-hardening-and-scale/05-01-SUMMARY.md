@@ -197,6 +197,12 @@ None - no external service configuration required.
 - The three-cap admission decision and its `rejected` outcome shape are the pattern later Phase 5 plans (session-issuance rate limiting, D-12) should follow rather than reinventing a second admission style.
 - **Blocker/concern for later 05-0x plans touching `apps/api/src/builds/store-contract.test.ts` or `apps/api/src/configurations/repository-contract.test.ts`:** be aware of the documented cross-file Postgres test-isolation gap (see Issues Encountered above) before adding more heavily-concurrent Postgres contract tests, which would further raise its (already low) observed collision rate.
 
+## Self-Check: PASSED
+
+All 13 key files confirmed present on disk (`[ -f ]`); all 7 task/deviation commit
+hashes (`64d00ba`, `c732ae2`, `0435321`, `f7c46a4`, `2113c04`, `5e08a23`, `ecabed6`)
+confirmed present via `git log --oneline`.
+
 ---
 *Phase: 05-hardening-and-scale*
 *Completed: 2026-09-03*
