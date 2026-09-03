@@ -7,8 +7,13 @@
  * limit that never touches a returning visitor and never blacks out the read-only
  * site.
  */
+import { readFileSync, readdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import type { Catalog } from '@qmk-web-app/domain';
+import { readCatalogSample } from '@qmk-web-app/qmk-fixtures';
 import { buildApp } from './app.ts';
 import { CatalogStore } from './catalog-store.ts';
 import { InMemoryConfigurationRepository } from './configurations/memory-repository.ts';
@@ -19,10 +24,15 @@ function newApp(
   options: {
     secureCookies?: boolean;
     sessionIssuanceLimit?: { max: number; windowMs: number };
+    withCatalog?: boolean;
   } = {},
 ): FastifyInstance {
+  const store = new CatalogStore();
+  if (options.withCatalog) {
+    store.add(readCatalogSample() as Catalog);
+  }
   return buildApp({
-    store: new CatalogStore(),
+    store,
     repository: new InMemoryConfigurationRepository(),
     sessionSecret: SECRET,
     secureCookies: options.secureCookies ?? false,
@@ -186,5 +196,96 @@ describe('session-issuance IP rate limit (D-12)', () => {
     const refused = await app.inject({ ...REQUIRES_SESSION, remoteAddress: address });
     const serialised = JSON.stringify({ headers: refused.headers, body: refused.body });
     expect(serialised).not.toContain(address);
+  });
+});
+
+describe('a refusal scopes to session-requiring paths (D-12 vs. D-14 non-lockout)', () => {
+  const LIMIT = { max: 1, windowMs: 60_000 };
+  const address = '203.0.113.50';
+
+  async function exhaust(app: FastifyInstance): Promise<void> {
+    // Any session-requiring path consumes the shared per-address budget.
+    await app.inject({ method: 'GET', url: '/v1/configurations', remoteAddress: address });
+  }
+
+  it('still answers 200 with no cookie for a cookieless GET /health once over limit', async () => {
+    const app = newApp({ sessionIssuanceLimit: LIMIT });
+    await exhaust(app);
+
+    const res = await app.inject({ method: 'GET', url: '/health', remoteAddress: address });
+    expect(res.statusCode).toBe(200);
+    expect(setCookieHeader(res)).toBeUndefined();
+  });
+
+  it('still answers 200 with no cookie for a cookieless GET /v1/catalog/… once over limit', async () => {
+    const app = newApp({ sessionIssuanceLimit: LIMIT, withCatalog: true });
+    await exhaust(app);
+
+    const res = await app.inject({ method: 'GET', url: '/v1/catalog', remoteAddress: address });
+    expect(res.statusCode).toBe(200);
+    expect(setCookieHeader(res)).toBeUndefined();
+  });
+
+  it('answers 429 for a cookieless POST /v1/configurations once over limit', async () => {
+    const app = newApp({ sessionIssuanceLimit: LIMIT });
+    await exhaust(app);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/configurations',
+      remoteAddress: address,
+      payload: {},
+    });
+    expect(res.statusCode).toBe(429);
+    expect(res.json().error.code).toBe('RATE_LIMITED');
+  });
+
+  it('answers 429 for a cookieless GET /v1/configurations once over limit — an owner-scoped read still needs an identity', async () => {
+    const app = newApp({ sessionIssuanceLimit: LIMIT });
+    await exhaust(app);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/configurations',
+      remoteAddress: address,
+    });
+    expect(res.statusCode).toBe(429);
+    expect(res.json().error.code).toBe('RATE_LIMITED');
+  });
+
+  it('never leaves request.ownerId undefined when a request is served without a session', async () => {
+    // The catalog handler never reads request.ownerId, so this exercises the
+    // throwaway-id branch without a handler crash being the only signal — the request
+    // must not merely avoid a 500, it must have a real (if uncookied) ownerId.
+    const app = newApp({ sessionIssuanceLimit: LIMIT, withCatalog: true });
+    await exhaust(app);
+
+    const res = await app.inject({ method: 'GET', url: '/health', remoteAddress: address });
+    expect(res.statusCode).toBe(200);
+  });
+});
+
+describe('owner-id invariant (05-03 assumption_delta_decision)', () => {
+  it('assigns request.ownerId in exactly one file under apps/api/src: session.ts', () => {
+    const srcRoot = join(dirname(fileURLToPath(import.meta.url)));
+
+    function walk(dir: string): string[] {
+      return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) return walk(full);
+        if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) return [full];
+        return [];
+      });
+    }
+
+    // Matches a property assignment (`request.ownerId = …` or `req.ownerId = …`), not
+    // a comparison (`=== `), a read, or an unrelated local variable named `ownerId`.
+    const ASSIGNMENT_RE = /\b(?:request|req)\.ownerId\s*=(?!=)/;
+
+    const matches = walk(srcRoot)
+      .filter((file) => ASSIGNMENT_RE.test(readFileSync(file, 'utf8')))
+      .map((file) => file.slice(srcRoot.length + 1));
+
+    expect(matches).toEqual(['session.ts']);
   });
 });
