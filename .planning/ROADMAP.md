@@ -202,12 +202,12 @@ Plans:
   4. An operator can restore configurations and artifacts from a backup and can state what retention actually deleted and when.
   5. The launch identity model is decided and recorded: either accounts exist and a user can reach their configurations from a second device, or anonymous-only is a stated launch constraint whose data-loss behaviour is visible in-product.
 
-**Plans**: 8 plans
+**Plans**: 1/8 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 05-01-PLAN.md — Atomic build admission control: global queue-depth cap plus both per-owner caps in one advisory-locked insert (tracer, wave 1)
+- [x] 05-01-PLAN.md — Atomic build admission control: global queue-depth cap plus both per-owner caps in one advisory-locked insert (tracer, wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -285,7 +285,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → **4** → 5 → 6
 | 2. Saved Visual Configurations | n/a (pre-GSD) | Complete | - |
 | 3. Generation and Server Builds | n/a (pre-GSD) | Complete | 2026-08-09 |
 | 4. Verified SOCD Support | 4/5 | In Progress|  |
-| 5. Hardening and Scale | 0/8 | Planned | - |
+| 5. Hardening and Scale | 1/8 | In Progress|  |
 | 6. Browser Flashing Research and Rollout | 0/TBD | Not started | - |
 
 Phases 0–3 were delivered before this planning directory existed and were not decomposed into GSD
