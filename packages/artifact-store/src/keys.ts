@@ -51,3 +51,18 @@ export function assertValidKey(key: string): void {
     throw new ArtifactStoreError('malformed storage key');
   }
 }
+
+/**
+ * The inverse of `artifactKey`/`logKey`: recovers the build id a storage key was
+ * derived from, or `null` if the key does not match one of the two shapes this module
+ * produces. Used by the retention sweep to name build ids in its record instead of
+ * storage keys — a key read back out of the database is untrusted input for the same
+ * reason `assertValidKey` treats it that way, so this validates rather than trusting a
+ * value that merely looks right.
+ */
+export function buildIdFromKey(key: string): string | null {
+  const match = /^builds\/([0-9a-f-]{36})\/(?:firmware|log)$/.exec(key);
+  if (!match) return null;
+  const buildId = match[1] as string;
+  return UUID_RE.test(buildId) ? buildId : null;
+}
