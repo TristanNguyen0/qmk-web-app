@@ -7,7 +7,7 @@ import type { ConfigurationRepository } from './configurations/types.ts';
 import { registerBuildRoutes } from './routes/builds.ts';
 import { registerCatalogRoutes } from './routes/catalog.ts';
 import { registerConfigurationRoutes } from './routes/configurations.ts';
-import { registerSessions } from './session.ts';
+import { registerSessions, type SessionIssuanceLimit } from './session.ts';
 
 export interface BuildAppOptions {
   store: CatalogStore;
@@ -33,6 +33,8 @@ export interface BuildAppOptions {
    * from `QWA_TRUST_PROXY` — never pass `true` here (D-14).
    */
   trustProxy?: string | string[] | false;
+  /** Overrides SESSION_LIMITS for tests; see `session.ts#SessionOptions.issuanceLimit`. */
+  sessionIssuanceLimit?: SessionIssuanceLimit;
   logger?: boolean;
 }
 
@@ -56,6 +58,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   registerSessions(app, {
     secret: options.sessionSecret,
     secure: options.secureCookies ?? false,
+    ...(options.sessionIssuanceLimit ? { issuanceLimit: options.sessionIssuanceLimit } : {}),
   });
 
   app.get('/health', async () => ({ status: 'ok' }));

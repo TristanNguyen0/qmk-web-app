@@ -12,7 +12,10 @@ export const API_VERSION = 1;
 export interface ApiErrorBody {
   apiVersion: number;
   error: {
-    code: ErrorCode | 'BAD_REQUEST' | 'NOT_FOUND' | 'INTERNAL_ERROR';
+    // RATE_LIMITED is transport-level, not a domain ErrorCode: a session-issuance
+    // refusal is not a build-queue condition, and reusing BUILD_QUEUE_LIMITED would
+    // make that code a lie (see 05-05-PLAN.md planner_notes).
+    code: ErrorCode | 'BAD_REQUEST' | 'NOT_FOUND' | 'INTERNAL_ERROR' | 'RATE_LIMITED';
     message: string;
     fieldErrors?: readonly FieldError[];
   };
@@ -61,6 +64,22 @@ export function sendBadRequest(
     error: { code: 'BAD_REQUEST', message, ...(fieldErrors ? { fieldErrors } : {}) },
   };
   return reply.code(400).send(body);
+}
+
+/**
+ * A session-issuance refusal (D-12). Distinct from `sendBadRequest` and every domain
+ * error: this is a transport-level condition, not something the client's request
+ * shape or the domain model has an opinion about.
+ */
+export function sendRateLimited(reply: FastifyReply, retryAfterSeconds: number): FastifyReply {
+  const body: ApiErrorBody = {
+    apiVersion: API_VERSION,
+    error: {
+      code: 'RATE_LIMITED',
+      message: 'too many session requests from this address; try again shortly',
+    },
+  };
+  return reply.code(429).header('retry-after', String(retryAfterSeconds)).send(body);
 }
 
 export { DomainError };
