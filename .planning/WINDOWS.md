@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 1
+open_count: 2
 waived_count: 0
 fixed_count: 0
-total_count: 1
-last_updated: 2026-09-03T13:41:50.607Z
+total_count: 2
+last_updated: 2026-09-03T18:31:33.402Z
 ---
 
 # Broken Windows Ledger
@@ -16,6 +16,7 @@ last_updated: 2026-09-03T13:41:50.607Z
 | id | phase | kind | file | line | description | status | reason | recorded_at | resolved_at |
 |----|-------|------|------|------|-------------|--------|--------|-------------|-------------|
 | 1 | 05 | deviation | apps/api/src/builds/store-contract.test.ts |  | Pre-existing cross-file Postgres test-isolation gap (shared DB, no schema isolation between *-contract.test.ts files) surfaces as an intermittent builds_configuration_fk violation roughly 1 in 15-20 full-suite runs; admission-control logic itself verified correct via 15/15 clean isolated runs. See deferred-items.md. | open |  | 2026-09-03T13:41:50.607Z |  |
+| 2 | 05-hardening-and-scale | deviation | docs/matrix-selection.md |  | Curated smoke matrix criterion 3 (at least two members with a real multi-position layout) unmet by current 4-member set: only crkbd/rev1 has a multi-position layout, the three handwired/onekey/* members are single-position toolchain-diversity probes. Documented as a known gap for a future deliberate addition. | open |  | 2026-09-03T18:31:33.402Z |  |
 
 ````json
 [
@@ -29,6 +30,18 @@ last_updated: 2026-09-03T13:41:50.607Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-03T13:41:50.607Z",
+    "resolved_at": null
+  },
+  {
+    "id": 2,
+    "kind": "deviation",
+    "phase": "05-hardening-and-scale",
+    "file": "docs/matrix-selection.md",
+    "line": null,
+    "description": "Curated smoke matrix criterion 3 (at least two members with a real multi-position layout) unmet by current 4-member set: only crkbd/rev1 has a multi-position layout, the three handwired/onekey/* members are single-position toolchain-diversity probes. Documented as a known gap for a future deliberate addition.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-03T18:31:33.402Z",
     "resolved_at": null
   }
 ]
