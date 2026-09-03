@@ -25,6 +25,14 @@ export interface BuildAppOptions {
   };
   /** Set Secure on session cookies. Must be true behind HTTPS in production. */
   secureCookies?: boolean;
+  /**
+   * The known reverse-proxy hop allowed to set X-Forwarded-For (an address, a CIDR,
+   * or a list of either), or `false` to trust nothing. Omitting it means trusting
+   * nothing, which is correct for an in-process test with no reverse proxy in front
+   * of it. See `apps/api/src/config.ts#parseTrustProxy` for how a caller derives this
+   * from `QWA_TRUST_PROXY` — never pass `true` here (D-14).
+   */
+  trustProxy?: string | string[] | false;
   logger?: boolean;
 }
 
@@ -34,6 +42,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     // Configurations are the largest body we accept; a full 8-layer keymap with
     // macros is well under this.
     bodyLimit: 1024 * 1024,
+    trustProxy: options.trustProxy ?? false,
   });
 
   app.addHook('onSend', async (_request, reply, payload) => {
