@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { artifactKey, assertValidKey, logKey } from './keys.ts';
+import { artifactKey, assertValidKey, buildIdFromKey, logKey } from './keys.ts';
 import { FilesystemArtifactStore } from './filesystem-store.ts';
 import { InMemoryArtifactStore } from './memory-store.ts';
 import { ArtifactStoreError, type ArtifactStore } from './types.ts';
@@ -32,6 +32,33 @@ describe('storage keys', () => {
     ]) {
       expect(() => assertValidKey(bad), bad).toThrow(ArtifactStoreError);
     }
+  });
+});
+
+describe('buildIdFromKey', () => {
+  it('recovers the build id from either key shape', () => {
+    expect(buildIdFromKey(artifactKey(BUILD_ID))).toBe(BUILD_ID);
+    expect(buildIdFromKey(logKey(BUILD_ID))).toBe(BUILD_ID);
+  });
+
+  it('returns null for a key that does not match either shape', () => {
+    for (const bad of [
+      'builds/../../etc/passwd',
+      `builds/${BUILD_ID}/../../escape`,
+      `builds/${BUILD_ID}/firmware/extra`,
+      `builds/${BUILD_ID}/keymap.c`,
+      `/absolute/${BUILD_ID}/firmware`,
+      '',
+    ]) {
+      expect(buildIdFromKey(bad), bad).toBeNull();
+    }
+  });
+
+  it('returns null when the middle segment is not a valid build id', () => {
+    // A round-tripped value that merely looks the right shape is not trusted just
+    // because it matches the regex's character class.
+    expect(buildIdFromKey('builds/not-a-uuid/firmware')).toBeNull();
+    expect(buildIdFromKey(`builds/AAAAAAAA-0000-4000-8000-000000000001/firmware`)).toBeNull();
   });
 });
 

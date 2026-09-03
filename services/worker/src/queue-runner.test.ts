@@ -20,7 +20,7 @@ import type {
   SandboxRunRequest,
   SandboxRunResult,
 } from '@qmk-web-app/qmk-sandbox';
-import { QueueRunner } from './queue-runner.ts';
+import { QueueRunner, type QueueRunnerEvent } from './queue-runner.ts';
 import { expectedTargetName } from './collect-artifact.ts';
 import { generatedKeymapName } from '@qmk-web-app/domain';
 
@@ -81,6 +81,7 @@ let artifacts: InMemoryArtifactStore;
 let sandbox: FakeSandbox;
 let runner: QueueRunner;
 let configuration: Configuration;
+let events: QueueRunnerEvent[];
 const configurationId = '22222222-2222-4222-8222-222222222222';
 
 function makeConfiguration(): Configuration {
@@ -147,6 +148,7 @@ beforeEach(() => {
   );
   artifacts = new InMemoryArtifactStore();
   sandbox = new FakeSandbox();
+  events = [];
   runner = new QueueRunner({
     workerId: WORKER,
     queue,
@@ -154,6 +156,7 @@ beforeEach(() => {
     sandbox,
     catalogs: (version) => (version === catalog.catalogVersion ? catalog : null),
     heartbeatMs: 5,
+    log: (event) => events.push(event),
   });
 });
 
@@ -435,6 +438,112 @@ describe('maintenance', () => {
     expect(result.objectsDeleted).toBeGreaterThanOrEqual(1);
     expect(await artifacts.get(artifactKey(buildId))).toBeNull();
     expect((await queue.get(buildId, OWNER))?.status).toBe('expired');
+
+    vi.useRealTimers();
+  });
+
+  it('records what a sweep deleted, naming build ids and never storage keys', async () => {
+    const buildId = await enqueue();
+    await runner.runOnce();
+
+    // The completed build's artifact and log both age out of retention at once, since
+    // both the artifact and log retention windows in BUILD_LIMITS are seven days from
+    // the same completion timestamp.
+    const stored = await queue.getArtifact(buildId, OWNER);
+    expect(stored).not.toBeNull();
+    vi.setSystemTime(new Date(Date.parse(stored!.expiresAt) + 1000));
+
+    const result = await runner.maintain();
+    expect(result.retention).not.toBeNull();
+    expect(result.retention?.buildsExpired).toBe(1);
+    expect(result.retention?.deletedAt).toEqual(expect.any(String));
+    expect(new Date(result.retention!.deletedAt).toString()).not.toBe('Invalid Date');
+
+    const kinds = [...result.retention!.objects].map((o) => o.kind).sort();
+    expect(kinds).toEqual(['artifact', 'log']);
+    for (const object of result.retention!.objects) {
+      expect(object.buildId).toBe(buildId);
+      expect(object.outcome).toBe('deleted');
+    }
+
+    const retentionEvents = events.filter((e) => e.message === 'retention');
+    expect(retentionEvents).toHaveLength(1);
+
+    // No storage key — the one thing the product promises never to expose — appears
+    // anywhere in the emitted event.
+    expect(JSON.stringify(retentionEvents)).not.toMatch(/builds\//);
+
+    vi.useRealTimers();
+  });
+
+  it('still emits a retention record when every blob delete throws', async () => {
+    const buildId = await enqueue();
+    await runner.runOnce();
+
+    const stored = await queue.getArtifact(buildId, OWNER);
+    vi.setSystemTime(new Date(Date.parse(stored!.expiresAt) + 1000));
+    vi.spyOn(artifacts, 'delete').mockRejectedValue(new Error('object store is down'));
+
+    // This is the case that matters: rows were reaped, every blob delete failed, and
+    // the sweep must not be silent about it.
+    const result = await runner.maintain();
+    expect(result.objectsDeleted).toBe(0);
+    expect(result.retention).not.toBeNull();
+    expect(result.retention?.buildsExpired).toBe(1);
+    for (const object of result.retention!.objects) {
+      expect(object.outcome).toBe('failed');
+    }
+    expect(events.filter((e) => e.message === 'retention')).toHaveLength(1);
+
+    vi.useRealTimers();
+  });
+
+  it('records an already-absent object distinctly from a deleted one', async () => {
+    const buildId = await enqueue();
+    await runner.runOnce();
+
+    const stored = await queue.getArtifact(buildId, OWNER);
+    vi.setSystemTime(new Date(Date.parse(stored!.expiresAt) + 1000));
+    // Remove the artifact blob out from under the sweep before it runs.
+    await artifacts.delete(artifactKey(buildId));
+
+    const result = await runner.maintain();
+    const artifactOutcome = result.retention?.objects.find((o) => o.kind === 'artifact');
+    expect(artifactOutcome?.outcome).toBe('already-absent');
+    const logOutcome = result.retention?.objects.find((o) => o.kind === 'log');
+    expect(logOutcome?.outcome).toBe('deleted');
+
+    vi.useRealTimers();
+  });
+
+  it('emits no retention event on a second, immediate sweep', async () => {
+    const buildId = await enqueue();
+    await runner.runOnce();
+
+    const stored = await queue.getArtifact(buildId, OWNER);
+    vi.setSystemTime(new Date(Date.parse(stored!.expiresAt) + 1000));
+
+    const first = await runner.maintain();
+    expect(first.retention).not.toBeNull();
+    events.length = 0;
+
+    const second = await runner.maintain();
+    expect(second.retention).toBeNull();
+    expect(events.filter((e) => e.message === 'retention')).toHaveLength(0);
+
+    vi.useRealTimers();
+  });
+
+  it('emits no retention event when only expired leases are reclaimed', async () => {
+    await enqueue();
+    await queue.claim({ workerId: 'other-worker', leaseMs: 10 });
+    vi.setSystemTime(new Date(Date.now() + 1000));
+
+    const result = await runner.maintain();
+    expect(result.requeued).toBeGreaterThanOrEqual(1);
+    expect(result.retention).toBeNull();
+    expect(events.filter((e) => e.message === 'retention')).toHaveLength(0);
+    expect(events.filter((e) => e.message === 'maintenance')).toHaveLength(1);
 
     vi.useRealTimers();
   });
