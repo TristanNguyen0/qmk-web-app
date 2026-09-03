@@ -524,6 +524,13 @@ describe('GET /v1/configurations/:id/builds', () => {
 
     const first = (await requestBuild(cookie, configurationId)).json()['build']['id'];
     await succeed(first);
+    // service.ts stamps `requestedAt` with `new Date().toISOString()`, millisecond
+    // resolution, and the list query orders by that column alone with no tiebreaker.
+    // `app.inject()` dispatches in-process with no real I/O, so without this delay
+    // `first` and `second` can land in the same millisecond and the assertion below
+    // becomes a coin flip on tie-break order — not something a real network round
+    // trip between two build requests would ever produce.
+    await new Promise((resolve) => setTimeout(resolve, 2));
     const second = (await requestBuild(cookie, configurationId)).json()['build']['id'];
 
     const res = await app.inject({
