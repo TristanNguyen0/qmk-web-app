@@ -592,6 +592,29 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
         expect(await builds.countRequestedSince(ALICE, oneHourAgo)).toBe(1);
       });
 
+      it('treats the hourly window’s lower bound as inclusive', async () => {
+        // Both `requestedAt` values and the cutoff are fixed, test-chosen instants —
+        // deterministic, unlike a live comparison against the database clock. This is
+        // the same `>=` operator the admission decision's own
+        // `requested_at >= now() - interval '1 hour'` uses, so the boundary rule
+        // proven here — one millisecond outside excludes, exactly at the cutoff
+        // includes — is the same rule that governs create()'s admission decision.
+        const cutoff = new Date(Date.now() - 3_600_000);
+        const justOutside = new Date(cutoff.getTime() - 1);
+        const atCutoff = new Date(cutoff.getTime());
+
+        await createBuild(
+          builds,
+          buildRecord(configurationId, ALICE, { requestedAt: justOutside.toISOString() }),
+        );
+        await createBuild(
+          builds,
+          buildRecord(configurationId, ALICE, { requestedAt: atCutoff.toISOString() }),
+        );
+
+        expect(await builds.countRequestedSince(ALICE, cutoff)).toBe(1);
+      });
+
       it('rejects a build once the per-owner concurrency cap is reached, naming the cap', async () => {
         const cap = BUILD_LIMITS.maxActiveBuildsPerOwner;
         for (let i = 0; i < cap; i += 1) {
