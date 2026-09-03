@@ -1,5 +1,16 @@
 /**
- * The telemetry attribute allowlist.
+ * The telemetry attribute allowlist — worker copy.
+ *
+ * Mirrors `apps/api/src/observability/attributes.ts` line for line rather than being
+ * imported from it: `services/worker` has no dependency on the `apps/api` package (and
+ * must not gain one — the API depends on the worker's absence from its own graph the
+ * same way `05-07-PLAN.md`'s `<planner_notes>` explains for `redact.ts` staying in the
+ * worker package, just in the opposite direction here). The allowlist itself has no
+ * process-specific behaviour — it is pure validation over shared `@qmk-web-app/domain`
+ * and `@qmk-web-app/build-queue` enums — so mirroring it costs a few dozen duplicate
+ * lines in exchange for not inventing a new shared package for one function. If this
+ * allowlist ever needs a third consumer, promoting it to a shared package is the right
+ * move; two mirrored copies is not yet that point.
  *
  * `ADR-0001-observability`: "Log redaction rules apply to every sink added later." An
  * allowlist is a *stronger* guarantee than a redaction pass: a regex table can miss a
@@ -13,7 +24,9 @@
  * id, a configuration name, a keymap binding, a storage key, a filesystem path, or raw
  * build-log text. None of those describe a build's outcome in closed, low-cardinality
  * terms; all of them are exactly the content `claude.md` § Build isolation and
- * `ADR-0001-observability` require redacted from every sink.
+ * `ADR-0001-observability` require redacted from every sink. On the worker side, the
+ * allowlist is the first line of defense; `redactAttributes` (`./redact.ts`, one
+ * directory up) is the second, applied to whatever string survives it.
  */
 import type { BuildAdmissionCap } from '@qmk-web-app/build-queue';
 import { BUILD_STATUSES, type BuildFailureCode, type BuildStatus } from '@qmk-web-app/domain';
@@ -21,7 +34,7 @@ import { BUILD_STATUSES, type BuildFailureCode, type BuildStatus } from '@qmk-we
 /**
  * Mirrors `BuildFailureCode` (`packages/domain/src/build.ts`). That type is a plain
  * union with no backing const array to import, so the closed set is restated here —
- * once, in the one file whose entire job is enumerating closed sets.
+ * once per mirrored copy, in the one file whose entire job is enumerating closed sets.
  */
 const BUILD_FAILURE_CODES: readonly BuildFailureCode[] = [
   'COMPILE_FAILED',
@@ -44,14 +57,6 @@ const BUILD_ADMISSION_CAPS: readonly BuildAdmissionCap[] = [
 /** A worker id is an operational identity (hostname + random suffix, or an operator-set env var), never user content — but it is still bounded, so a malformed caller cannot smuggle an unbounded string through it. */
 const MAX_WORKER_ID_LENGTH = 256;
 
-/**
- * The only attribute keys `telemetryAttributes` will ever admit, and each one's
- * permitted value domain. Every entry's `exportKey` is the name that actually reaches
- * the collector — snake_case, matching the dotted/underscored instrument names this
- * phase exports (`qwa.builds.failed`'s attribute is `failure_code`, for example) — kept
- * distinct from the camelCase field name call sites use, which follows this codebase's
- * own TypeScript convention.
- */
 interface AttributeSpec {
   exportKey: string;
   validate: (value: unknown) => value is string | number;
@@ -101,12 +106,6 @@ function describe(value: unknown): string {
  * Throws, naming the offending key, for any key outside the allowlist or any value
  * outside that key's declared domain — see the module header for why this is an
  * allowlist rather than a redaction pass.
- *
- * Returns the narrower `Record<string, string | number>` rather than the full OTel
- * `Attributes` type (which also allows booleans and arrays) — every value this
- * allowlist can ever produce is a string or a number, and the narrower return type is
- * what lets the worker pipe the result straight into `redactAttributes`, whose string
- * table has nothing to say about a boolean or an array.
  */
 export function telemetryAttributes(input: TelemetryAttributeInput): Record<string, string | number> {
   const result: Record<string, string | number> = {};

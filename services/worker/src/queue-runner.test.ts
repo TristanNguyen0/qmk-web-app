@@ -8,7 +8,15 @@
  * leaves a downloadable artifact behind.
  */
 import { randomUUID } from 'node:crypto';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { metrics } from '@opentelemetry/api';
+import {
+  AggregationTemporality,
+  InMemoryMetricExporter,
+  PeriodicExportingMetricReader,
+  type MetricData,
+  type ResourceMetrics,
+} from '@opentelemetry/sdk-metrics';
 import { InMemoryArtifactStore, artifactKey, logKey } from '@qmk-web-app/artifact-store';
 import { InMemoryBuildStore } from '@qmk-web-app/build-queue';
 import type { BuildRecord, Catalog, Configuration } from '@qmk-web-app/domain';
@@ -20,9 +28,19 @@ import type {
   SandboxRunRequest,
   SandboxRunResult,
 } from '@qmk-web-app/qmk-sandbox';
+import { shutdownTelemetry, startTelemetry } from './observability/otel.ts';
 import { QueueRunner, type QueueRunnerEvent } from './queue-runner.ts';
 import { expectedTargetName } from './collect-artifact.ts';
 import { generatedKeymapName } from '@qmk-web-app/domain';
+
+/** Finds a recorded metric by its exported instrument name — the "test meter provider" the plan asks for. */
+function findMetric(resourceMetrics: ResourceMetrics, name: string): MetricData | undefined {
+  for (const scope of resourceMetrics.scopeMetrics) {
+    const found = scope.metrics.find((metric) => metric.descriptor.name === name);
+    if (found) return found;
+  }
+  return undefined;
+}
 
 const catalog = readCatalogSample() as Catalog;
 const KEYBOARD_ID = 'crkbd/rev1';
@@ -546,5 +564,117 @@ describe('maintenance', () => {
     expect(events.filter((e) => e.message === 'maintenance')).toHaveLength(1);
 
     vi.useRealTimers();
+  });
+});
+
+describe('telemetry', () => {
+  let exporter: InMemoryMetricExporter;
+  let reader: PeriodicExportingMetricReader;
+
+  beforeEach(() => {
+    exporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
+    reader = new PeriodicExportingMetricReader({ exporter, exportIntervalMillis: 60_000 });
+    startTelemetry({ metricReader: reader });
+  });
+
+  afterEach(async () => {
+    await shutdownTelemetry();
+  });
+
+  it('produces exactly one throughput increment for one terminal build', async () => {
+    await enqueue();
+    expect(await runner.runOnce()).toBe('succeeded');
+
+    const { resourceMetrics } = await reader.collect();
+    const completed = findMetric(resourceMetrics, 'qwa.builds.completed');
+    expect(completed?.dataPoints).toHaveLength(1);
+    expect(completed?.dataPoints[0]?.value).toBe(1);
+    expect(completed?.dataPoints[0]?.attributes).toEqual({ status: 'succeeded' });
+  });
+
+  it("attributes a failed build's failure counter with a member of BuildFailureCode", async () => {
+    sandbox.outcome = 'failed';
+    await enqueue();
+    expect(await runner.runOnce()).toBe('failed');
+
+    const { resourceMetrics } = await reader.collect();
+    const failed = findMetric(resourceMetrics, 'qwa.builds.failed');
+    expect(failed?.dataPoints).toHaveLength(1);
+    expect(failed?.dataPoints[0]?.attributes['failure_code']).toBe('COMPILE_FAILED');
+  });
+
+  it('aggregates two recordings sharing an instrument and attribute set into one series', async () => {
+    await enqueue();
+    await runner.runOnce();
+    await enqueue();
+    await runner.runOnce();
+
+    const { resourceMetrics } = await reader.collect();
+    const completed = findMetric(resourceMetrics, 'qwa.builds.completed');
+    // One series (one data point), not two — the concrete form of the collision question.
+    expect(completed?.dataPoints).toHaveLength(1);
+    expect(completed?.dataPoints[0]?.value).toBe(2);
+  });
+
+  it('records the duration histogram alongside the throughput counter', async () => {
+    await enqueue();
+    await runner.runOnce();
+
+    const { resourceMetrics } = await reader.collect();
+    const duration = findMetric(resourceMetrics, 'qwa.builds.duration_ms');
+    expect(duration?.dataPoints).toHaveLength(1);
+    expect(duration?.dataPoints[0]?.attributes).toEqual({ status: 'succeeded' });
+  });
+
+  it('records worker liveness on each loop tick and each maintain(), attributed by worker id', async () => {
+    await runner.runOnce(); // idle tick — still a tick
+    await runner.maintain();
+
+    const { resourceMetrics } = await reader.collect();
+    const heartbeat = findMetric(resourceMetrics, 'qwa.worker.heartbeat');
+    expect(heartbeat?.dataPoints).toHaveLength(1);
+    expect(heartbeat?.dataPoints[0]?.value).toBe(2);
+    expect(heartbeat?.dataPoints[0]?.attributes).toEqual({ worker_id: WORKER });
+  });
+
+  it('an instrument that throws does not change a build outcome — the build still reaches its terminal state', async () => {
+    const meterSpy = vi.spyOn(metrics, 'getMeter').mockReturnValue({
+      createCounter: () => {
+        throw new Error('boom');
+      },
+      createHistogram: () => {
+        throw new Error('boom');
+      },
+      createGauge: () => {
+        throw new Error('boom');
+      },
+      createUpDownCounter: () => {
+        throw new Error('boom');
+      },
+      createObservableGauge: () => {
+        throw new Error('boom');
+      },
+      createObservableCounter: () => {
+        throw new Error('boom');
+      },
+      createObservableUpDownCounter: () => {
+        throw new Error('boom');
+      },
+      addBatchObservableCallback: () => {},
+      removeBatchObservableCallback: () => {},
+    });
+
+    try {
+      const buildId = await enqueue();
+      expect(await runner.runOnce()).toBe('succeeded');
+      const build = await queue.get(buildId, OWNER);
+      expect(build?.status).toBe('succeeded');
+      // A metrics failure is visible as a warn log, not a thrown error.
+      expect(events.some((e) => e.level === 'warn' && e.message.startsWith('telemetry:'))).toBe(
+        true,
+      );
+    } finally {
+      meterSpy.mockRestore();
+    }
   });
 });

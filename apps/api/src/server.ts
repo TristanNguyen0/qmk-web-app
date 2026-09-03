@@ -30,6 +30,7 @@ import { PostgresBuildStore } from '@qmk-web-app/build-queue';
 import { CatalogStore } from './catalog-store.ts';
 import { PostgresConfigurationRepository } from './configurations/postgres-repository.ts';
 import { runMigrations } from './db/migrate.ts';
+import { registerQueueDepthGauge } from './observability/metrics.ts';
 import { shutdownTelemetry, startTelemetry } from './observability/otel.ts';
 import { buildImageRef, loadManifest, REPO_ROOT } from '../../../infra/qmk/manifest.ts';
 
@@ -131,6 +132,12 @@ const app = buildApp({
   secureCookies: isProduction,
   trustProxy,
   logger: true,
+});
+
+// `countActiveGlobal()` is the same admission-cap read 05-01 added; the gauge is its
+// second consumer, not a duplicate implementation.
+registerQueueDepthGauge(buildRepository, {
+  log: (event) => app.log.warn({ error: event.error }, event.message),
 });
 
 app.log.info(
