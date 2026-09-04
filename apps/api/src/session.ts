@@ -66,7 +66,14 @@ function readCookie(header: string | undefined, name: string): string | null {
     const eq = part.indexOf('=');
     if (eq === -1) continue;
     if (part.slice(0, eq).trim() !== name) continue;
-    return decodeURIComponent(part.slice(eq + 1).trim());
+    try {
+      return decodeURIComponent(part.slice(eq + 1).trim());
+    } catch {
+      // Malformed percent-encoding (e.g. a lone `%`) throws a URIError. Treat it
+      // exactly like no cookie at all — see the onRequest hook's comment below — so a
+      // client sending a garbled cookie value gets a fresh session instead of a 500.
+      return null;
+    }
   }
   return null;
 }

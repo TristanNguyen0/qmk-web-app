@@ -94,6 +94,30 @@ describe('session cookie attributes', () => {
   });
 });
 
+describe('malformed percent-encoded cookie (CR-02, 05-REVIEW.md)', () => {
+  // `readCookie()` used to call decodeURIComponent unguarded; a lone `%` (or any
+  // invalid escape) threw a URIError inside the onRequest hook and turned every
+  // route — including /health — into a 500. The module's own documented contract is
+  // that an unreadable cookie is treated exactly like no cookie at all.
+  it.each(['%', '%zz', '%E0%A4'])(
+    'GET /health with cookie value %j succeeds and mints a fresh session, exactly like no cookie at all',
+    async (malformedValue) => {
+      const app = newApp();
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/health',
+        headers: { cookie: `qwa_session=${malformedValue}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      // A fresh session is minted, the same as the cookieless case in the
+      // "session cookie attributes" describe block above.
+      expect(setCookieHeader(res)).toBeDefined();
+    },
+  );
+});
+
 describe('session-issuance IP rate limit (D-12)', () => {
   const LIMIT = { max: 3, windowMs: 60_000 };
   // A session-required path: as of this task every refusal is 429, and Task 3 keeps
@@ -144,6 +168,30 @@ describe('session-issuance IP rate limit (D-12)', () => {
     const refused = await app.inject({ ...REQUIRES_SESSION, remoteAddress: address });
     expect(refused.statusCode).toBe(429);
   });
+
+  it.each(['%', '%zz', '%E0%A4'])(
+    'a malformed percent-encoded cookie (%j) is treated as no session, not a 500',
+    async (malformedValue) => {
+      const app = newApp({ sessionIssuanceLimit: LIMIT });
+      const address = '203.0.113.13';
+
+      // Mirrors the "tampered cookie" test above: a cookie that fails to parse must
+      // reach the mint branch exactly like no cookie at all — including consuming an
+      // issuance slot — rather than crashing the onRequest hook (CR-02, 05-REVIEW.md).
+      const first = await app.inject({
+        ...REQUIRES_SESSION,
+        remoteAddress: address,
+        headers: { cookie: `qwa_session=${malformedValue}` },
+      });
+      expect(first.statusCode).not.toBe(500);
+
+      for (let i = 1; i < LIMIT.max; i++) {
+        await app.inject({ ...REQUIRES_SESSION, remoteAddress: address });
+      }
+      const refused = await app.inject({ ...REQUIRES_SESSION, remoteAddress: address });
+      expect(refused.statusCode).toBe(429);
+    },
+  );
 
   it('does not affect a different address while the first is over its limit', async () => {
     const app = newApp({ sessionIssuanceLimit: LIMIT });
