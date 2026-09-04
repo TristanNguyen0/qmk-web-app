@@ -118,6 +118,15 @@ Refreshing the image — after a QMK pin bump, or to pick up a base-image securi
 3. Commit the manifest change. The next matrix run's assertion step will pass because the local
    image now matches what the manifest names — not because CI rebuilt anything.
 
+**Tag convention for a security-only refresh.** `buildImage.tag` carries a revision suffix after
+the QMK version (`0.33.13-1`, `0.33.13-2`). Refreshing the image at an unchanged QMK pin bumps
+that suffix and nothing else — in particular it leaves `catalog.version` alone, because catalog
+content derives from the QMK source tree and the extractor/normalizer, not from OS package
+versions, so the host-provisioned catalog does not need republishing. Verify that claim rather
+than assuming it: run the matrix against the new image and compare the fixture hashes to the
+previous run's. They should be identical, and a difference means the refresh moved something that
+reaches firmware and needs investigating before the manifest is committed.
+
 A QMK pin bump (`infra/qmk/manifest.json`'s `tag`/`commit` fields) is always a **new** catalog
 version and a new build image, never an in-place mutation of the running one
 (`ADR-0001-qmk-pin`) — the refresh process above applies identically whether the image changed
