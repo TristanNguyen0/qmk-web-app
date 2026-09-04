@@ -107,8 +107,18 @@ jobs:
       # it. `pnpm test -- --reporter=verbose` does not work here either — pnpm's `--`
       # is appended after the script's own `vitest run`, producing a stray second
       # `--` that vitest parses as a positional test-name filter instead of a flag.
+      #
+      # The log goes to $RUNNER_TEMP, not a fixed /tmp path: /tmp is shared with every
+      # other user of the build host, so a stale /tmp/vitest-output.log left by a
+      # developer's local run is owned by them and not writable by the runner user —
+      # `tee` then fails, and the next step greps whatever that stale file happened to
+      # contain. `set -o pipefail` is what makes vitest's own exit status decide this
+      # step: without it the pipeline reports `tee`'s status, so a genuinely failing
+      # suite would exit 0 and the step would pass.
       - name: Test
-        run: pnpm exec vitest run --reporter=verbose 2>&1 | tee /tmp/vitest-output.log
+        run: |
+          set -euo pipefail
+          pnpm exec vitest run --reporter=verbose 2>&1 | tee "${RUNNER_TEMP}/vitest-output.log"
 
       # A self-skipping test that is allowed to self-skip in CI is not a test. If the
       # database above wasn't actually reachable, the `Test` step still exits 0 —
@@ -116,7 +126,7 @@ jobs:
       # silently-vacuous run into a real failure.
       - name: Assert the Postgres contract suite actually ran
         run: |
-          if grep -q "PostgresBuildStore (no database reachable)" /tmp/vitest-output.log; then
+          if grep -q "PostgresBuildStore (no database reachable)" "${RUNNER_TEMP}/vitest-output.log"; then
             echo "::error::apps/api/src/builds/store-contract.test.ts's Postgres half self-skipped — no database was reachable. This check brings up infra/deploy/docker-compose.yml specifically to run that suite for real; a green run that skipped it proves nothing about admission-control concurrency." >&2
             exit 1
           fi
