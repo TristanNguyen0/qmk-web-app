@@ -50,6 +50,50 @@ states the runner must never execute a fork pull request in absolute terms, and 
 independent controls below both exist. A fork PR's workflow-defined code, if it ever ran here,
 would run with that same effective privilege.
 
+### The Node toolchain the runner host must provide
+
+`run:` steps in both workflows execute with whatever Node the runner user resolves on its own
+`PATH` — neither workflow installs one, because T-05-30 keeps `actions/checkout` the only
+marketplace action either file uses. That makes the host's Node a real prerequisite, not a
+detail:
+
+- **Node 22 or newer**, matching `engines.node` in `package.json`. Several scripts pass
+  `--experimental-strip-types`, which needs 22.6+. Debian 13's `nodejs` package is 20.19.2 and is
+  not sufficient.
+- **The corepack that ships with that Node.** Debian's separate `node-corepack` package is 0.24.0,
+  which cannot launch pnpm 11 at all: it aborts with `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING`,
+  because that corepack's module-loader shim predates pnpm's dynamic imports.
+
+Install it *for the runner user*, not system-wide, so the runner keeps the unprivileged posture
+described above. As the runner user:
+
+```
+curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+. "$HOME/.nvm/nvm.sh"
+nvm install 22
+nvm alias default 22
+```
+
+The runner service does not read an interactive shell's profile, so also record the resolved
+`bin` directory in the runner's own environment file, then restart the service as an
+administrator:
+
+```
+echo "PATH=$HOME/.nvm/versions/node/$(nvm version 22)/bin:/usr/local/bin:/usr/bin:/bin" \
+  >> "$HOME/actions-runner/.env"
+systemctl restart actions.runner.<owner>-<repo>.<runner-label>.service
+```
+
+The runner user's `PATH` must not point into *another* user's home directory. A runner whose
+`PATH` carries, say, `/home/<someone-else>/.nvm/...` logs repeated
+`EACCES: permission denied, stat` lines while resolving executables and then falls back silently
+to `/usr/bin` — which is how a host that has Node 22 installed for the wrong user still ends up
+running jobs on Debian's Node 20.
+
+The first step of both jobs asserts this version and fails with an explicit message naming the
+Node it found, so a host that drifts back to an older Node says so directly rather than
+resurfacing as a confusing corepack or `tsc` error further down the job.
+
 ## Keeping the runner in step with the pinned image — the controlled refresh process
 
 Neither workflow contains a `docker build` step. The matrix job asserts the local image against
