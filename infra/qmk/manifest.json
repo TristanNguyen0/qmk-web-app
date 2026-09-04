@@ -7,7 +7,7 @@
   "fetchedAt": "2026-08-08",
   "buildImage": {
     "name": "qmk-web-app/qmk-build",
-    "tag": "0.33.13-1",
+    "tag": "0.33.13-2",
     "digest": null,
     "$comment": "digest is populated by infra/qmk/scripts/build-image.sh once the image is built, and is recorded with every build."
   },

@@ -47,9 +47,30 @@ export function loadManifest(): QmkManifest {
 /**
  * Absolute path of the checked-out pinned tree. Keyed by commit so two pins can
  * coexist on disk and a stale checkout can never masquerade as the current one.
+ *
+ * `QMK_SOURCE_PATH` overrides the location. CI needs that: `actions/checkout` runs
+ * `git clean -ffdx` at the start of every run, which deletes the gitignored
+ * `.cache/`, so on the build host the pinned tree lives outside the workspace and is
+ * provisioned by a human rather than fetched per run (docs/runbooks/ci-runner.md).
  */
 export function qmkSourcePath(manifest: QmkManifest = loadManifest()): string {
+  const override = process.env.QMK_SOURCE_PATH;
+  if (override) return resolve(override);
   return resolve(REPO_ROOT, '.cache', 'qmk', manifest.commit);
+}
+
+/**
+ * Absolute path of the published catalog directory this manifest names — the same
+ * reasoning as `qmkSourcePath`, for the same reason: `/catalogs/` is gitignored and
+ * does not survive a CI checkout either, so `QMK_CATALOG_PATH` overrides it.
+ *
+ * Deriving the default from `catalog.version` rather than repeating the version
+ * string keeps the manifest the one place it is written.
+ */
+export function publishedCatalogPath(manifest: QmkManifest = loadManifest()): string {
+  const override = process.env.QMK_CATALOG_PATH;
+  if (override) return resolve(override);
+  return resolve(REPO_ROOT, 'catalogs', manifest.catalog.version);
 }
 
 export function buildImageRef(manifest: QmkManifest = loadManifest()): string {

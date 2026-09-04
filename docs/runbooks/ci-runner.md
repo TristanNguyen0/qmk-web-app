@@ -50,6 +50,50 @@ states the runner must never execute a fork pull request in absolute terms, and 
 independent controls below both exist. A fork PR's workflow-defined code, if it ever ran here,
 would run with that same effective privilege.
 
+### The Node toolchain the runner host must provide
+
+`run:` steps in both workflows execute with whatever Node the runner user resolves on its own
+`PATH` — neither workflow installs one, because T-05-30 keeps `actions/checkout` the only
+marketplace action either file uses. That makes the host's Node a real prerequisite, not a
+detail:
+
+- **Node 22 or newer**, matching `engines.node` in `package.json`. Several scripts pass
+  `--experimental-strip-types`, which needs 22.6+. Debian 13's `nodejs` package is 20.19.2 and is
+  not sufficient.
+- **The corepack that ships with that Node.** Debian's separate `node-corepack` package is 0.24.0,
+  which cannot launch pnpm 11 at all: it aborts with `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING`,
+  because that corepack's module-loader shim predates pnpm's dynamic imports.
+
+Install it *for the runner user*, not system-wide, so the runner keeps the unprivileged posture
+described above. As the runner user:
+
+```
+curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+. "$HOME/.nvm/nvm.sh"
+nvm install 22
+nvm alias default 22
+```
+
+The runner service does not read an interactive shell's profile, so also record the resolved
+`bin` directory in the runner's own environment file, then restart the service as an
+administrator:
+
+```
+echo "PATH=$HOME/.nvm/versions/node/$(nvm version 22)/bin:/usr/local/bin:/usr/bin:/bin" \
+  >> "$HOME/actions-runner/.env"
+systemctl restart actions.runner.<owner>-<repo>.<runner-label>.service
+```
+
+The runner user's `PATH` must not point into *another* user's home directory. A runner whose
+`PATH` carries, say, `/home/<someone-else>/.nvm/...` logs repeated
+`EACCES: permission denied, stat` lines while resolving executables and then falls back silently
+to `/usr/bin` — which is how a host that has Node 22 installed for the wrong user still ends up
+running jobs on Debian's Node 20.
+
+The first step of both jobs asserts this version and fails with an explicit message naming the
+Node it found, so a host that drifts back to an older Node says so directly rather than
+resurfacing as a confusing corepack or `tsc` error further down the job.
+
 ## Keeping the runner in step with the pinned image — the controlled refresh process
 
 Neither workflow contains a `docker build` step. The matrix job asserts the local image against
@@ -74,6 +118,15 @@ Refreshing the image — after a QMK pin bump, or to pick up a base-image securi
 3. Commit the manifest change. The next matrix run's assertion step will pass because the local
    image now matches what the manifest names — not because CI rebuilt anything.
 
+**Tag convention for a security-only refresh.** `buildImage.tag` carries a revision suffix after
+the QMK version (`0.33.13-1`, `0.33.13-2`). Refreshing the image at an unchanged QMK pin bumps
+that suffix and nothing else — in particular it leaves `catalog.version` alone, because catalog
+content derives from the QMK source tree and the extractor/normalizer, not from OS package
+versions, so the host-provisioned catalog does not need republishing. Verify that claim rather
+than assuming it: run the matrix against the new image and compare the fixture hashes to the
+previous run's. They should be identical, and a difference means the refresh moved something that
+reaches firmware and needs investigating before the manifest is committed.
+
 A QMK pin bump (`infra/qmk/manifest.json`'s `tag`/`commit` fields) is always a **new** catalog
 version and a new build image, never an in-place mutation of the running one
 (`ADR-0001-qmk-pin`) — the refresh process above applies identically whether the image changed
@@ -85,6 +138,49 @@ fixable high/critical findings in the build image; if it turns red because of, s
 Go toolchain baked into an upstream layer, the fix is refreshing the image via the steps above —
 not loosening the scan's severity or `--ignore-unfixed` filters, and not adding a build step to
 CI.
+
+### The host-provisioned pinned inputs: the QMK tree and the published catalog
+
+`actions/checkout` runs `git clean -ffdx` at the start of every run. `-x` removes ignored files,
+so the gitignored `.cache/` (the pinned QMK tree, ~1.5 GB with submodules) and `/catalogs/` (the
+published catalog, ~53 MB) are deleted from the workspace before every job. Neither can be
+provisioned once inside the workspace and then reused.
+
+They are therefore host-provisioned, outside any workspace, and treated exactly like the build
+image above: refreshed by a human, asserted by CI, never produced by CI. The matrix job's
+"Assert host-provisioned QMK tree and catalog match the manifest" step resolves both, checks the
+catalog's `catalogVersion` and `qmkCommit` against `infra/qmk/manifest.json`, and exports
+`QMK_SOURCE_PATH` / `QMK_CATALOG_PATH` for the compile step. A catalog left behind by an earlier
+pin fails that assertion instead of compiling happily against data this manifest never named.
+
+**Layout.** The default root is `/home/github-runner/qmk-ci` — inside the runner user's own home,
+so provisioning needs no `sudo` and the runner keeps the unprivileged posture described above.
+Set the `QMK_HOST_ROOT` repository variable to move it.
+
+```
+$QMK_HOST_ROOT/qmk/<manifest.commit>/                  the pinned QMK tree
+$QMK_HOST_ROOT/catalogs/<manifest.catalog.version>/    the published catalog
+```
+
+**Provisioning, and refreshing after a pin bump.** Run as the runner user, from any clone of this
+repository on the build host. Both scripts honour the same environment variables the workflow
+asserts against, so they publish straight into the location CI reads — there is no copy step, and
+therefore no opportunity for the two to drift:
+
+```
+export QMK_HOST_ROOT=/home/github-runner/qmk-ci
+COMMIT="$(node -p "require('./infra/qmk/manifest.json').commit")"
+VERSION="$(node -p "require('./infra/qmk/manifest.json').catalog.version")"
+
+QMK_SOURCE_PATH="$QMK_HOST_ROOT/qmk/$COMMIT" pnpm qmk:fetch --submodules
+QMK_SOURCE_PATH="$QMK_HOST_ROOT/qmk/$COMMIT" \
+  QMK_CATALOG_PATH="$QMK_HOST_ROOT/catalogs/$VERSION" pnpm catalog:build
+```
+
+`catalog:build` takes roughly ten minutes and runs inside the build image, so refresh the image
+first when both are changing. A pin bump changes `commit` and `catalog.version` together, so the
+new inputs land in new directories rather than overwriting the running ones — the same
+never-mutate-in-place rule `ADR-0001-qmk-pin` states for the image.
 
 ## When the runner is offline
 
