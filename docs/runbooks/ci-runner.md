@@ -130,6 +130,49 @@ Go toolchain baked into an upstream layer, the fix is refreshing the image via t
 not loosening the scan's severity or `--ignore-unfixed` filters, and not adding a build step to
 CI.
 
+### The host-provisioned pinned inputs: the QMK tree and the published catalog
+
+`actions/checkout` runs `git clean -ffdx` at the start of every run. `-x` removes ignored files,
+so the gitignored `.cache/` (the pinned QMK tree, ~1.5 GB with submodules) and `/catalogs/` (the
+published catalog, ~53 MB) are deleted from the workspace before every job. Neither can be
+provisioned once inside the workspace and then reused.
+
+They are therefore host-provisioned, outside any workspace, and treated exactly like the build
+image above: refreshed by a human, asserted by CI, never produced by CI. The matrix job's
+"Assert host-provisioned QMK tree and catalog match the manifest" step resolves both, checks the
+catalog's `catalogVersion` and `qmkCommit` against `infra/qmk/manifest.json`, and exports
+`QMK_SOURCE_PATH` / `QMK_CATALOG_PATH` for the compile step. A catalog left behind by an earlier
+pin fails that assertion instead of compiling happily against data this manifest never named.
+
+**Layout.** The default root is `/home/github-runner/qmk-ci` — inside the runner user's own home,
+so provisioning needs no `sudo` and the runner keeps the unprivileged posture described above.
+Set the `QMK_HOST_ROOT` repository variable to move it.
+
+```
+$QMK_HOST_ROOT/qmk/<manifest.commit>/                  the pinned QMK tree
+$QMK_HOST_ROOT/catalogs/<manifest.catalog.version>/    the published catalog
+```
+
+**Provisioning, and refreshing after a pin bump.** Run as the runner user, from any clone of this
+repository on the build host. Both scripts honour the same environment variables the workflow
+asserts against, so they publish straight into the location CI reads — there is no copy step, and
+therefore no opportunity for the two to drift:
+
+```
+export QMK_HOST_ROOT=/home/github-runner/qmk-ci
+COMMIT="$(node -p "require('./infra/qmk/manifest.json').commit")"
+VERSION="$(node -p "require('./infra/qmk/manifest.json').catalog.version")"
+
+QMK_SOURCE_PATH="$QMK_HOST_ROOT/qmk/$COMMIT" pnpm qmk:fetch --submodules
+QMK_SOURCE_PATH="$QMK_HOST_ROOT/qmk/$COMMIT" \
+  QMK_CATALOG_PATH="$QMK_HOST_ROOT/catalogs/$VERSION" pnpm catalog:build
+```
+
+`catalog:build` takes roughly ten minutes and runs inside the build image, so refresh the image
+first when both are changing. A pin bump changes `commit` and `catalog.version` together, so the
+new inputs land in new directories rather than overwriting the running ones — the same
+never-mutate-in-place rule `ADR-0001-qmk-pin` states for the image.
+
 ## When the runner is offline
 
 Both required checks — `fast` and `matrix-result` — are attached to jobs that select

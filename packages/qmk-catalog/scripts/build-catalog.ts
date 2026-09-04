@@ -18,7 +18,12 @@ import {
   parseExtractorDump,
   publishCatalog,
 } from '../src/index.ts';
-import { buildImageRef, loadManifest, qmkSourcePath, REPO_ROOT } from '../../../infra/qmk/manifest.ts';
+import {
+  buildImageRef,
+  loadManifest,
+  publishedCatalogPath,
+  qmkSourcePath,
+} from '../../../infra/qmk/manifest.ts';
 
 function argValues(flag: string): string[] {
   const values: string[] = [];
@@ -65,7 +70,10 @@ const catalog = normalizeCatalog(parseExtractorDump(dump), {
 });
 
 // Published form: a directory the API can serve without loading every keyboard.
-const outDir = outArg ? resolve(outArg) : resolve(REPO_ROOT, 'catalogs', catalog.catalogVersion);
+// The default location comes from the manifest (and so honours QMK_CATALOG_PATH),
+// which is what lets the build host publish straight to the location CI asserts
+// against instead of publishing into the workspace and copying afterwards.
+const outDir = outArg ? resolve(outArg) : publishedCatalogPath(manifest);
 publishCatalog(catalog, outDir);
 
 // The single-file form stays available for fixtures and offline analysis.

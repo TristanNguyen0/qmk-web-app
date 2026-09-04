@@ -127,6 +127,11 @@ jobs:
     # Nine real compiles across two fixture sets, plus one double-build
     # reproducibility check. Generous on purpose.
     timeout-minutes: 60
+    # Where the build host keeps the pinned inputs that cannot live in the workspace.
+    # Set the QMK_HOST_ROOT repository variable to move them; empty falls back to the
+    # layout docs/runbooks/ci-runner.md describes.
+    env:
+      QMK_HOST_ROOT: ${{ vars.QMK_HOST_ROOT }}
     steps:
       - uses: actions/checkout@v4
 
@@ -189,6 +194,48 @@ jobs:
           else
             echo "${IMAGE_REF} exists locally; manifest records no digest yet, so only existence was checked"
           fi
+
+      # The pinned QMK tree and the published catalog are host-provisioned and live
+      # outside the workspace: actions/checkout runs `git clean -ffdx` at the start of
+      # every run, which deletes the gitignored `.cache/` and `/catalogs/`, so neither
+      # survives in the workspace. Like the build image above they are refreshed by a
+      # human through the controlled refresh process and only ever *asserted* here — a
+      # matrix that regenerated its own inputs would stop proving anything about the
+      # catalog the API actually serves (docs/runbooks/ci-runner.md).
+      - name: Assert host-provisioned QMK tree and catalog match the manifest
+        run: |
+          set -euo pipefail
+
+          HOST_ROOT="${QMK_HOST_ROOT:-/home/github-runner/qmk-ci}"
+          MANIFEST_COMMIT="$(node -p "require('./infra/qmk/manifest.json').commit")"
+          MANIFEST_CATALOG="$(node -p "require('./infra/qmk/manifest.json').catalog.version")"
+
+          SOURCE_PATH="${HOST_ROOT}/qmk/${MANIFEST_COMMIT}"
+          CATALOG_PATH="${HOST_ROOT}/catalogs/${MANIFEST_CATALOG}"
+
+          if [ ! -d "${SOURCE_PATH}" ]; then
+            echo "::error::no pinned QMK tree at ${SOURCE_PATH}. This job asserts rather than fetches — see docs/runbooks/ci-runner.md for how the host's pinned inputs are provisioned." >&2
+            exit 1
+          fi
+
+          if [ ! -f "${CATALOG_PATH}/index.json" ]; then
+            echo "::error::no published catalog at ${CATALOG_PATH} (missing index.json). This job asserts rather than rebuilds — see docs/runbooks/ci-runner.md." >&2
+            exit 1
+          fi
+
+          # Present is not enough: a catalog left behind by an earlier pin would compile
+          # happily and prove nothing about the manifest this run is testing.
+          CATALOG_VERSION="$(node -p "require('${CATALOG_PATH}/index.json').catalogVersion")"
+          CATALOG_COMMIT="$(node -p "require('${CATALOG_PATH}/index.json').qmkCommit")"
+          if [ "${CATALOG_VERSION}" != "${MANIFEST_CATALOG}" ] || [ "${CATALOG_COMMIT}" != "${MANIFEST_COMMIT}" ]; then
+            echo "::error::host catalog at ${CATALOG_PATH} is stale: it reports catalogVersion ${CATALOG_VERSION} at qmkCommit ${CATALOG_COMMIT}, but infra/qmk/manifest.json names ${MANIFEST_CATALOG} at ${MANIFEST_COMMIT}. Republish it — see docs/runbooks/ci-runner.md." >&2
+            exit 1
+          fi
+
+          echo "QMK_SOURCE_PATH=${SOURCE_PATH}" >> "${GITHUB_ENV}"
+          echo "QMK_CATALOG_PATH=${CATALOG_PATH}" >> "${GITHUB_ENV}"
+          echo "pinned QMK tree    ${SOURCE_PATH}"
+          echo "published catalog  ${CATALOG_PATH} (catalogVersion ${CATALOG_VERSION}, qmkCommit ${CATALOG_COMMIT})"
 
       - name: Run the curated compile matrix
         run: pnpm run matrix

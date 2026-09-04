@@ -24,7 +24,13 @@ import { openPublishedCatalog, type PublishedCatalog } from '@qmk-web-app/qmk-ca
 import { GENERATOR_VERSION } from '@qmk-web-app/qmk-generator';
 import { DockerSandbox } from '@qmk-web-app/qmk-sandbox';
 import { runBuild } from '../src/index.ts';
-import { buildImageRef, loadManifest, qmkSourcePath, type QmkManifest } from '../../../infra/qmk/manifest.ts';
+import {
+  buildImageRef,
+  loadManifest,
+  publishedCatalogPath,
+  qmkSourcePath,
+  type QmkManifest,
+} from '../../../infra/qmk/manifest.ts';
 import {
   missingSocdFixtures,
   validateFixtureSet,
@@ -252,11 +258,9 @@ export async function runMatrix(catalogPath: string, sets: readonly FixtureSet[]
 // When run directly (not imported by a wrapper), this is `pnpm matrix`: run every
 // known fixture set against one shared sandbox.
 if (process.argv[1] && import.meta.url === new URL(process.argv[1], 'file:').href) {
-  const catalogPath = process.argv[2];
-  if (!catalogPath) {
-    console.error('usage: run-matrix.ts <published-catalog-dir>');
-    process.exit(64);
-  }
+  // Defaults to the catalog the manifest names, which `QMK_CATALOG_PATH` can point
+  // outside the workspace; an explicit argument still wins for one-off runs.
+  const catalogPath = process.argv[2] ?? publishedCatalogPath();
   const [{ SMOKE_FIXTURE_SET }, { SOCD_FIXTURE_SET }] = await Promise.all([
     import('./fixtures/smoke.ts'),
     import('./fixtures/socd.ts'),
