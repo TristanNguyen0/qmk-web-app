@@ -13,6 +13,7 @@
 import { useState } from 'react';
 import { LIMITS, type Macro, type MacroStep } from '@qmk-web-app/domain';
 import type { SupportedKeycode } from '../lib/client.ts';
+import { newId } from '../lib/ids.ts';
 
 export interface MacroEditorProps {
   macros: Macro[];
@@ -27,7 +28,7 @@ export function MacroEditor({ macros, keycodes, onAdd, onUpdate, onRemove }: Mac
 
   function addMacro() {
     onAdd({
-      id: crypto.randomUUID(),
+      id: newId(),
       name: `Macro ${macros.length + 1}`,
       // A macro must have at least one step to be valid, so start with a real one.
       steps: [{ kind: 'tap', keycode: 'KC_A' }],

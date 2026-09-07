@@ -29,6 +29,7 @@ import {
   requestBuild,
   type BuildSummary,
 } from '../lib/client.ts';
+import { newId } from '../lib/ids.ts';
 
 export interface BuildPanelProps {
   configurationId: string;
@@ -78,7 +79,7 @@ export function BuildPanel({ configurationId, dirty, isDraft }: BuildPanelProps)
   const [submitting, setSubmitting] = useState(false);
 
   // Stable across retries of one intent; replaced only once a build has been accepted.
-  const idempotencyKey = useRef<string>(crypto.randomUUID());
+  const idempotencyKey = useRef<string>(newId());
 
   const loadHistory = useCallback(async () => {
     try {
@@ -126,7 +127,7 @@ export function BuildPanel({ configurationId, dirty, isDraft }: BuildPanelProps)
     try {
       const build = await requestBuild(configurationId, idempotencyKey.current);
       // Accepted: the next build is a new intent and needs its own key.
-      idempotencyKey.current = crypto.randomUUID();
+      idempotencyKey.current = newId();
       setCurrent(build);
       void loadHistory();
     } catch (caught) {
