@@ -14,6 +14,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import {
   ERROR_CODES,
   SUPPORTED_KEYCODES,
+  communityKeymapFit,
   importCommunityKeymap,
   importDefaultKeymap,
   isValidKeyboardIdShape,
@@ -226,7 +227,12 @@ export function registerCatalogRoutes(app: FastifyInstance, store: CatalogStore)
         if (typeof preset !== 'string' || !/^[a-z0-9_]{1,64}$/.test(preset)) {
           return sendBadRequest(reply, 'preset must be a community layout name');
         }
-        if (!keyboard.communityLayouts?.some((c) => c.name === preset)) {
+        // Offered when the keyboard declares the layout, or when the arrangement fits
+        // this layout by physical key position well enough (same rows, most keys land).
+        const declared = keyboard.communityLayouts?.some((c) => c.name === preset) ?? false;
+        const keymap = meta.communityKeymaps[preset];
+        const layout = keyboard.layouts.find((l) => l.name === layoutId)!;
+        if (!keymap || (!declared && communityKeymapFit(layout, keymap) < 0.5)) {
           return sendNotFound(reply, 'this keyboard has no such layout preset in this catalog version');
         }
       }

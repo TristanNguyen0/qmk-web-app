@@ -333,10 +333,26 @@ describe('resolveProposal', () => {
     });
     expect(result.issues[0]).toMatchObject({
       op: 'apply_layout_preset',
-      reason: '"hhkb" is not a layout preset available for this keyboard',
-      candidates: ['planck_mit'],
+      reason: '"hhkb" is not a layout preset that fits this keyboard',
+      candidates: ['planck_mit', 'ortho_4x16 (fitted, 100% of keys)', 'ortho_4x6 (fitted, 50% of keys)'],
     });
+    // A five-row arrangement is never offered for a four-row grid, however many keys coincide.
+    expect(result.issues[0]?.candidates?.some((c) => c.startsWith('ortho_5x') || c.startsWith('60_'))).toBe(false);
     expect(result.candidate.layers).toEqual(before.layers);
+  });
+
+  it('fits an arrangement the keyboard does not declare by physical key position', () => {
+    const result = resolveProposal({
+      configuration: planck(),
+      catalog,
+      newId,
+      proposal: proposal([{ op: 'apply_layout_preset', preset: 'ortho_4x16' }]),
+    });
+    expect(result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
+    expect(result.changes[0]?.description).toMatch(/ortho_4x16 layout preset \(layouts\/default\/ortho_4x16\/default_ortho_4x16\/keymap\.c, fitted by physical key position\)/);
+    // Every Planck key has a twin in the left 12 columns of a 4x16 grid.
+    expect(Object.keys(result.candidate.layers[0]!.bindings).length).toBeGreaterThan(40);
   });
 
   it('fails apply_default_keymap honestly when the catalog has no default', () => {
@@ -392,8 +408,18 @@ describe('assistant context', () => {
     expect(text).toContain('Layer 1 "Layer 1"');
     expect(text).toContain('MO(1)');
     expect(ctx.layoutPresets).toEqual(['split_3x5_3', 'split_3x6_3']);
-    expect(text).toContain('Layout presets (QMK');
-    expect(text).toContain('split_3x6_3');
+    expect(ctx.fittedPresets).toEqual([]); // nothing else is a 3-row split
+    expect(text).toContain('exact fit for this keyboard: split_3x5_3, split_3x6_3');
+  });
+
+  it('lists arrangements that fit by physical position, with their coverage', () => {
+    const ctx = buildAssistantContext({ configuration: planck(), catalog });
+    expect(ctx.layoutPresets).toEqual(['planck_mit']);
+    expect(ctx.fittedPresets[0]).toEqual({ name: 'ortho_4x16', fit: 1 });
+    expect(ctx.fittedPresets.some((f) => f.name.startsWith('60_'))).toBe(false);
+    const text = renderAssistantContext(ctx);
+    expect(text).toContain('by physical key position');
+    expect(text).toContain('ortho_4x16 [100%]');
   });
 
   it('says plainly when SOCD is unavailable', () => {

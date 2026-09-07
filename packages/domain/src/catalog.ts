@@ -82,6 +82,19 @@ export interface CatalogCommunityKeymap {
   name: string;
   source: string;
   layers: readonly CatalogDefaultKeymapLayer[];
+  /**
+   * The layout's key geometry from `layouts/default/<name>/info.json`, one entry per
+   * keymap position, in key units. Lets the keymap be laid onto a keyboard that does
+   * not declare the layout, by matching physical positions exactly.
+   */
+  positions: readonly CatalogCommunityKeyGeometry[];
+}
+
+export interface CatalogCommunityKeyGeometry {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
 /** A community layout this keyboard supports, and the keyboard's own macro for it. */

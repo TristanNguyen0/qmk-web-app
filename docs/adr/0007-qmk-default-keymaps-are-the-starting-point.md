@@ -69,6 +69,15 @@ preset onto any layout of the keyboard exactly as the default is carried. The as
 layout" means QMK's HHKB keymap, never the model's recollection of one. Catalog `0.33.13-3`,
 image `0.33.13-4`; SOCD records re-earned by a matrix run.
 
+Extractor/normalizer v4 (catalog `0.33.13-4`, image `0.33.13-5`) add each community layout's
+key geometry from `layouts/default/<name>/info.json`. A keyboard that does not declare a layout
+can still take its keymap by **exact physical position** (`x, y, w, h` to a hundredth of a key
+unit): a 65% board's alphas and modifiers sit exactly where a 60% HHKB's do, so they get the HHKB
+arrangement, while its 2u backspace, right column and arrows have no twin and stay unassigned —
+counted, never guessed. A fit is offered only when the two are the same height in rows and at
+least half of the arrangement's own keys land (`communityKeymapFit`), which is what separates
+"HHKB onto a 65%" from "the top four rows of a five-row keymap onto a 4×12 grid".
+
 ## Consequences
 
 - 3,639 of 3,743 supported keyboards have a usable default. The 104 without one are

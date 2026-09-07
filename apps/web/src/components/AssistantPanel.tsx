@@ -169,7 +169,16 @@ function Proposal({
 
   return (
     <div className="assistant__proposal" role="region" aria-live="polite" aria-label="Proposed changes">
-      <p className="assistant__summary">{proposal.summary}</p>
+      {partial ? (
+        // The model wrote its summary before the resolver refused anything, so it may
+        // describe work that did not happen. Frame it as intent, not as fact.
+        <p className="assistant__summary">
+          <span className="muted">The assistant intended: </span>
+          {proposal.summary}
+        </p>
+      ) : (
+        <p className="assistant__summary">{proposal.summary}</p>
+      )}
 
       {proposal.changes.length > 0 ? (
         <>

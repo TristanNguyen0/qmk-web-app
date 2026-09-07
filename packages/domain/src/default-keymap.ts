@@ -240,25 +240,25 @@ function positionMapping(target: CatalogLayout, source: CatalogLayout): number[]
 /** A keymap as the catalog carries it, from either source, plus where it came from. */
 interface KeymapSource {
   source: string;
-  /** Layout macro the keymap was written for; must be one of the keyboard's layouts. */
+  /** Layout the keymap was written for — a name for attribution. */
   layout: string;
   layers: readonly CatalogDefaultKeymapLayer[];
 }
 
-/** The shared core: carry `keymap` onto `layoutId` of `keyboard`, reporting everything it cannot represent. */
+/** The shared core: carry `keymap` onto `layoutId` of `keyboard` through `mapping`, reporting everything it cannot represent. */
 function importKeymap(
   keyboard: SupportedCatalogKeyboard,
   layoutId: string,
   keymap: KeymapSource,
+  /** For each target position index, the keymap position holding the same physical key, or -1. */
+  mappingFor: (target: CatalogLayout) => number[],
   keycodeAliases: Readonly<Record<string, string>>,
   newId: () => string,
 ): DefaultKeymapImport | DefaultKeymapUnavailable {
   const target = keyboard.layouts.find((l) => l.name === layoutId);
   if (!target) return { available: false, reason: 'unknown_layout' };
-  const source = keyboard.layouts.find((l) => l.name === keymap.layout);
-  if (!source) return { available: false, reason: 'unknown_layout' };
 
-  const mapping = positionMapping(target, source);
+  const mapping = mappingFor(target);
   const unmatchedPositions = mapping.filter((i) => i < 0).length;
 
   const imported = keymap.layers.slice(0, LIMITS.maxLayers);
@@ -313,7 +313,9 @@ export function importDefaultKeymap(
   if (!defaultKeymap.available) {
     return { available: false, reason: defaultKeymap.reason };
   }
-  return importKeymap(keyboard, layoutId, defaultKeymap, keycodeAliases, newId);
+  const source = keyboard.layouts.find((l) => l.name === defaultKeymap.layout);
+  if (!source) return { available: false, reason: 'unknown_layout' };
+  return importKeymap(keyboard, layoutId, defaultKeymap, (target) => positionMapping(target, source), keycodeAliases, newId);
 }
 
 export interface ImportCommunityKeymapOptions extends ImportDefaultKeymapOptions {
@@ -332,9 +334,76 @@ export function importCommunityKeymap(
 ): DefaultKeymapImport | DefaultKeymapUnavailable {
   const { keyboard, layoutId, keycodeAliases, name } = options;
   const newId = options.newId ?? (() => globalThis.crypto.randomUUID());
-  const ref = (keyboard.communityLayouts ?? []).find((c) => c.name === name);
-  if (!ref) return { available: false, reason: `this keyboard does not support the ${name} layout` };
   const keymap = options.communityKeymaps[name];
   if (!keymap) return { available: false, reason: `the catalog has no keymap for the ${name} layout` };
-  return importKeymap(keyboard, layoutId, { source: keymap.source, layout: ref.layout, layers: keymap.layers }, keycodeAliases, newId);
+
+  // Exact: the keyboard declares the layout, so its own macro says which switch is
+  // which. Positions map by matrix through that macro, as for the default keymap.
+  const ref = (keyboard.communityLayouts ?? []).find((c) => c.name === name);
+  if (ref) {
+    const source = keyboard.layouts.find((l) => l.name === ref.layout);
+    if (!source) return { available: false, reason: 'unknown_layout' };
+    return importKeymap(
+      keyboard,
+      layoutId,
+      { source: keymap.source, layout: ref.layout, layers: keymap.layers },
+      (target) => positionMapping(target, source),
+      keycodeAliases,
+      newId,
+    );
+  }
+
+  // Geometric: the keyboard does not declare the layout, but the layout's own
+  // geometry says where each of its keys sits, in key units from the top-left. A
+  // target key binds only to a preset key at exactly the same place and size — a 2u
+  // backspace is not the HHKB's two 1u keys, and guessing which one it "means" is not
+  // this code's call. Everything without an exact twin stays unassigned and is counted.
+  if (!keymap.positions || keymap.positions.length === 0) {
+    return { available: false, reason: `this keyboard does not declare the ${name} layout and the catalog has no geometry to fit it by` };
+  }
+  const bySpot = new Map<string, number>();
+  keymap.positions.forEach((g, index) => bySpot.set(geometryKey(g), index));
+  return importKeymap(
+    keyboard,
+    layoutId,
+    { source: keymap.source, layout: `${name} (fitted by physical key position)`, layers: keymap.layers },
+    (target) => target.positions.map((p) => (p.r === 0 ? bySpot.get(geometryKey(p)) ?? -1 : -1)),
+    keycodeAliases,
+    newId,
+  );
 }
+
+/** Physical footprint to a hundredth of a key unit, so 1.25 and 1.2500001 agree. */
+function geometryKey(g: { x: number; y: number; w: number; h: number }): string {
+  const q = (n: number) => Math.round(n * 100);
+  return `${q(g.x)},${q(g.y)},${q(g.w)},${q(g.h)}`;
+}
+
+/**
+ * How well a community keymap would fit a layout by physical position, as the share of
+ * the layout's keys that get a key — or 0 when the fit is not meaningful at all:
+ *
+ *  - The two must be the same height in rows. "Same place, same role" holds between a
+ *    60% and a 65% (both five rows) but not between a 4-row grid and a 5-row one, where
+ *    the grid would take the top four rows of a keymap and lose its modifiers.
+ *  - Most of the arrangement's own keys must land (at least half). Otherwise the layout
+ *    is borrowing a corner of a much larger keymap, not adopting an arrangement.
+ *
+ * Used to decide which arrangements are worth offering for a keyboard that does not
+ * declare them; exact declared layouts do not go through this.
+ */
+export function communityKeymapFit(layout: CatalogLayout, keymap: CatalogCommunityKeymap): number {
+  if (!keymap.positions || keymap.positions.length === 0 || layout.positions.length === 0) return 0;
+  const height = (ps: readonly { y: number; h: number }[]) => Math.round(Math.max(...ps.map((p) => p.y + p.h)) * 100);
+  if (height(layout.positions) !== height(keymap.positions)) return 0;
+
+  const spots = new Set(keymap.positions.map(geometryKey));
+  const boardSpots = new Set(layout.positions.filter((p) => p.r === 0).map(geometryKey));
+  const boardHits = layout.positions.filter((p) => p.r === 0 && spots.has(geometryKey(p))).length;
+  const presetHits = keymap.positions.filter((g) => boardSpots.has(geometryKey(g))).length;
+  if (presetHits / keymap.positions.length < MIN_PRESET_SHARE_USED) return 0;
+  return boardHits / layout.positions.length;
+}
+
+/** At least this share of an arrangement's keys must land on the board for the fit to count. */
+const MIN_PRESET_SHARE_USED = 0.5;

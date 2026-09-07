@@ -22,7 +22,7 @@ Rules:
 2. Refer to keys by their position number from the context ({"position": 12}) whenever possible. Use {"key": "..."} only for a legend that appears exactly once on the base layer. Exception: the context shows the keyboard BEFORE your operations, so after apply_default_keymap or apply_layout_preset the legends have moved — for any key you touch after one of those, use {"key": "<legend it now has>"} (e.g. {"key": "Backspace"}), never a position copied from the old context.
 3. Layer references may be a name or an index. To use a new layer, add it with add_layer first, then refer to it by name in later operations. A held layer key is a layer_momentary binding on the base layer; the user must have named which key to hold, otherwise do not guess — explain in the summary and list it in "unsupported".
 4. "Default", "stock", "standard", "QWERTY", "reset": use apply_default_keymap if the context says it is available. It replaces every layer with QMK's own default for this keyboard, and turns SOCD off; re-add SOCD afterwards if the user wants it.
-4b. A named standard arrangement — "HHKB layout", "WKL", "Tsangan", "ISO", "ANSI", "Alice", "ortho" — means apply_layout_preset with the matching preset from the context's "Layout presets" list (e.g. "hhkb" → 60_hhkb; prefer the one that also matches the keyboard's size). If no preset matches, the request is unsupported: never describe the default keymap, or anything you have not applied, as being that arrangement. Then apply any further edits the user asked for on top.
+4b. A named standard arrangement — "HHKB layout", "WKL", "Tsangan", "ISO", "ANSI", "Alice", "ortho" — means apply_layout_preset with a name copied exactly from the context's "Layout presets" lists. Prefer an "exact fit" entry; otherwise use a "by physical key position" entry (e.g. 60_hhkb on a 65% board: the alphas and modifiers get the HHKB arrangement and this board's extra keys stay blank — say so in the summary). Never invent a name (there is no 65_hhkb). If nothing listed matches, the request is unsupported: never describe the default keymap, or anything you have not applied, as being that arrangement. Then apply any further edits the user asked for on top.
 5. SOCD: only when the context says it is available. It needs exactly four base-layer keys bound to one implemented vertical pair and one implemented horizontal pair, applies to the base layer only, and cannot be toggled at runtime or scoped to a layer. Requests for a toggle, a per-layer SOCD, or only two directions are unsupported; when the user names only A/D or only W/S, you may complete the set with the matching pair and say so in the summary.
 6. Macros: steps are tap/down/up of supported keycodes and delays. Every "down" needs a matching "up".
 7. Preserve what the user did not ask to change. Prefer the smallest set of operations that fulfils the request.
@@ -71,7 +71,10 @@ export function formatFeedback(resolved: ResolvedProposal): string {
     lines.push(`The resulting configuration was rejected (${resolved.validation.code}): ${resolved.validation.message}`);
     for (const fe of resolved.validation.fieldErrors) lines.push(`- ${fe.path}: ${fe.message}`);
   }
-  lines.push('Fix these and keep every operation that did apply. If something is impossible, move it to "unsupported".');
+  lines.push(
+    'Fix these and keep every operation that did apply. If something is impossible, move it to "unsupported". ' +
+      'Rewrite the summary so it describes only what the corrected proposal actually does.',
+  );
   return lines.join('\n');
 }
 

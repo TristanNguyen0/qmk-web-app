@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CatalogLayout, SupportedCatalogKeyboard } from './catalog.ts';
 import {
   bindingFromQmkToken,
+  communityKeymapFit,
   importCommunityKeymap,
   importDefaultKeymap,
   layerNameFromDesignator,
@@ -298,6 +299,12 @@ describe('importCommunityKeymap', () => {
         { name: '0', keycodes: ['KC_ESC', 'KC_LCTL', 'MO(1)'] },
         { name: '1', keycodes: ['_______', 'KC_DELETE', '_______'] },
       ],
+      // Geometry of the community layout: three 1u keys; matches LAYOUT_all's x=3,0,1 at y=0.
+      positions: [
+        { x: 3, y: 0, w: 1, h: 1 },
+        { x: 0, y: 0, w: 1, h: 1 },
+        { x: 1, y: 0, w: 1, h: 1 },
+      ],
     },
   };
 
@@ -325,10 +332,41 @@ describe('importCommunityKeymap', () => {
     expect(result.unmatchedPositions).toBe(1); // LAYOUT_all's [0,2] has no key in the preset
   });
 
-  it('refuses a layout the keyboard does not declare, or the catalog has no keymap for', () => {
+  it('fits an undeclared layout by exact physical key position, leaving the rest unassigned', () => {
+    // keyboard() declares no community layouts; the helper puts LAYOUT_all's keys at x=0..3, y=0.
+    const result = importCommunityKeymap({
+      keyboard: keyboard(),
+      layoutId: 'LAYOUT_all',
+      name: 'tiny_3',
+      communityKeymaps: COMMUNITY,
+      keycodeAliases: ALIASES,
+      newId,
+    });
+    expect(result.available).toBe(true);
+    if (!result.available) return;
+    expect(result.sourceLayout).toBe('tiny_3 (fitted by physical key position)');
+    // x=3 → KC_ESC, x=0 → KC_LCTL, x=1 → MO(1); the key at x=2 has no twin and stays unassigned.
+    expect(result.layers[0]?.bindings).toEqual({
+      '3': { kind: 'keycode', keycode: 'KC_ESCAPE' },
+      '0': { kind: 'keycode', keycode: 'KC_LEFT_CTRL' },
+      '1': { kind: 'layer_momentary', layer: 1 },
+    });
+    expect(result.unmatchedPositions).toBe(1);
+    expect(communityKeymapFit(keyboard().layouts[0]!, COMMUNITY.tiny_3)).toBe(0.75);
+    // A different height means a different kind of board: no fit, however many keys coincide.
+    expect(communityKeymapFit(keyboard().layouts[0]!, { ...COMMUNITY.tiny_3, positions: [{ x: 0, y: 0, w: 1, h: 1 }, { x: 1, y: 0, w: 1, h: 1 }, { x: 0, y: 1, w: 1, h: 1 }] })).toBe(0);
+  });
+
+  it('refuses a layout the catalog has no keymap or geometry for', () => {
     expect(
-      importCommunityKeymap({ keyboard: keyboard(), layoutId: 'LAYOUT_all', name: 'tiny_3', communityKeymaps: COMMUNITY, keycodeAliases: ALIASES }),
-    ).toMatchObject({ available: false, reason: expect.stringMatching(/does not support the tiny_3 layout/) });
+      importCommunityKeymap({
+        keyboard: keyboard(),
+        layoutId: 'LAYOUT_all',
+        name: 'tiny_3',
+        communityKeymaps: { tiny_3: { ...COMMUNITY.tiny_3, positions: [] } },
+        keycodeAliases: ALIASES,
+      }),
+    ).toMatchObject({ available: false, reason: expect.stringMatching(/no geometry to fit it by/) });
     expect(
       importCommunityKeymap({
         keyboard: keyboard({ communityLayouts: [{ name: 'other', layout: 'LAYOUT_all' }] }),

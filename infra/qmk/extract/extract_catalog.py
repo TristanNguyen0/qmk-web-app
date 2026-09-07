@@ -176,7 +176,8 @@ def main():
         'type': 'provenance',
         # v2: each keyboard record carries `default_keymap` (see _default_keymap).
         # v3: one `community_keymap` record per QMK community layout (see below).
-        'extractorVersion': 3,
+        # v4: community_keymap records carry the layout's key geometry (`positions`).
+        'extractorVersion': 4,
         'qmkCommit': resolved_commit,
         'commitSource': 'git' if head else 'caller-asserted',
         'qmkRoot': qmk_root,
@@ -205,6 +206,16 @@ def main():
         if not os.path.isfile(keymap_c):
             continue
         record = {'type': 'community_keymap', 'layout': name}
+        # The layout's own geometry (layouts/default/<name>/info.json), verbatim: what
+        # lets a community keymap be laid onto a keyboard that does not declare the
+        # layout, by matching physical key positions.
+        info_path = os.path.join(layouts_dir, name, 'info.json')
+        try:
+            with open(info_path, encoding='utf-8') as fh:
+                layout_info = json.load(fh)
+            record['positions'] = layout_info.get('layouts', {}).get(f'LAYOUT_{name}', {}).get('layout')
+        except (OSError, ValueError) as exc:
+            record['positions_error'] = {'kind': type(exc).__name__, 'message': str(exc)[:500]}
         try:
             parsed = qmk.keymap.parse_keymap_c(keymap_c)
             record.update({

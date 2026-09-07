@@ -12,7 +12,7 @@ import {
 } from './normalize.ts';
 
 const OPTIONS = {
-  catalogVersion: '0.33.13-3',
+  catalogVersion: '0.33.13-4',
   expectedQmkCommit: FIXTURE_QMK_COMMIT,
   generatedAt: '2026-01-01T00:00:00.000Z',
 };
@@ -286,6 +286,10 @@ describe('community-layout keymaps', () => {
     expect(hhkb?.layers).toHaveLength(2);
     expect(hhkb?.layers[0]?.keycodes.slice(0, 3)).toEqual(['KC_ESC', 'KC_1', 'KC_2']);
     for (const layer of hhkb!.layers) expect(layer.keycodes).toHaveLength(60);
+    // Geometry from layouts/default/60_hhkb/info.json, one entry per key, w/h defaulted to 1.
+    expect(hhkb?.positions).toHaveLength(60);
+    expect(hhkb?.positions[0]).toEqual({ x: 0, y: 0, w: 1, h: 1 });
+    expect(hhkb?.positions[14]).toEqual({ x: 14, y: 0, w: 1, h: 1 }); // the split backspace's second 1u
     // 60_abnt2 needs a locale header cpp cannot resolve — absent, not guessed.
     expect(catalog.communityKeymaps['60_abnt2']).toBeUndefined();
     // The ortho grids' defaults are `KC_A, KC_B, …` compile patterns, not arrangements.
@@ -306,11 +310,13 @@ describe('community-layout keymaps', () => {
     const catalog = normalizeCatalog(
       [
         ...base,
-        { type: 'community_keymap', layout: 'pair', status: 'resolved', source: 's', layers: [{ name: '0', layout: 'LAYOUT_pair', keycodes: ['KC_A', 'KC_B'] }] },
-        { type: 'community_keymap', layout: 'trio', status: 'resolved', source: 's', layers: [{ name: '0', layout: 'LAYOUT_trio', keycodes: ['KC_A', 'KC_B', 'KC_C'] }] },
+        { type: 'community_keymap', layout: 'pair', status: 'resolved', source: 's', positions: [{ x: 0, y: 0 }, { x: 1, y: 0 }], layers: [{ name: '0', layout: 'LAYOUT_pair', keycodes: ['KC_A', 'KC_B'] }] },
+        { type: 'community_keymap', layout: 'trio', status: 'resolved', source: 's', positions: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }], layers: [{ name: '0', layout: 'LAYOUT_trio', keycodes: ['KC_A', 'KC_B', 'KC_C'] }] },
+        // Geometry that does not match the keymap: rejected rather than laid onto the wrong switches.
+        { type: 'community_keymap', layout: 'nogeo', status: 'resolved', source: 's', positions: [{ x: 0, y: 0 }], layers: [{ name: '0', layout: 'LAYOUT_nogeo', keycodes: ['KC_A', 'KC_B'] }] },
         { type: 'community_keymap', layout: 'wrong_macro', status: 'resolved', source: 's', layers: [{ name: '0', layout: 'LAYOUT', keycodes: ['KC_A', 'KC_B'] }] },
         { type: 'community_keymap', layout: 'broken', status: 'failed', error: { kind: 'CppError', message: 'x' } },
-        { type: 'community_keymap', layout: 'pattern', status: 'resolved', source: 's', layers: [{ name: '0', layout: 'LAYOUT_pattern', keycodes: ['KC_A', 'KC_A'] }] },
+        { type: 'community_keymap', layout: 'pattern', status: 'resolved', source: 's', positions: [{ x: 0, y: 0 }, { x: 1, y: 0 }], layers: [{ name: '0', layout: 'LAYOUT_pattern', keycodes: ['KC_A', 'KC_A'] }] },
         {
           type: 'keyboard',
           keyboardId: 'x/kb',
@@ -326,7 +332,7 @@ describe('community-layout keymaps', () => {
       ] as ExtractorRecord[],
       OPTIONS,
     );
-    expect(Object.keys(catalog.communityKeymaps).filter((n) => ['pair', 'trio', 'wrong_macro', 'broken', 'pattern'].includes(n))).toEqual(['pair', 'trio']);
+    expect(Object.keys(catalog.communityKeymaps).filter((n) => ['pair', 'trio', 'wrong_macro', 'broken', 'pattern', 'nogeo'].includes(n))).toEqual(['pair', 'trio']);
     const kb = catalog.keyboards.find((k) => k.keyboardId === 'x/kb');
     if (!kb?.supported) throw new Error('expected supported');
     expect(kb.communityLayouts).toEqual([{ name: 'pair', layout: 'LAYOUT_pair' }]);

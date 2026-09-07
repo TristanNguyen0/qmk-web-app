@@ -136,7 +136,9 @@ export const assistantProposalSchema = z
   .object({
     /** One or two sentences for the user describing the proposed change. */
     summary: z.string().trim().min(1).max(600),
-    operations: z.array(operationSchema).max(MAX_OPERATIONS),
+    // Models occasionally omit an empty list rather than send `[]`; an absent list is
+    // "nothing to do", and the summary/unsupported still carry the answer.
+    operations: z.array(operationSchema).max(MAX_OPERATIONS).default([]),
     unsupported: z.array(unsupportedRequestSchema).max(50).default([]),
   })
   .strict();

@@ -7,12 +7,12 @@
   "fetchedAt": "2026-08-08",
   "buildImage": {
     "name": "qmk-web-app/qmk-build",
-    "tag": "0.33.13-4",
+    "tag": "0.33.13-5",
     "digest": null,
     "$comment": "digest is populated by infra/qmk/scripts/build-image.sh once the image is built, and is recorded with every build."
   },
   "catalog": {
-    "version": "0.33.13-3",
+    "version": "0.33.13-4",
     "$comment": "Catalog version is independent of the QMK tag so a normalizer change can republish without a QMK bump."
   }
 }

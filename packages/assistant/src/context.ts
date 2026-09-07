@@ -10,6 +10,7 @@ import {
   LIMITS,
   SOCD_POLICIES,
   SUPPORTED_KEYCODES,
+  communityKeymapFit,
   importDefaultKeymap,
   socdCapabilitiesFor,
   type Binding,
@@ -44,12 +45,23 @@ export interface AssistantContext {
   /** Per layer, per position: the legend shown in the editor, or null when unassigned. */
   legends: (string | null)[][];
   defaultKeymap: { available: true; source: string; layers: number } | { available: false; reason: string };
-  /** Community layouts the catalog can apply to this keyboard, e.g. `60_hhkb`. */
+  /** Community layouts this keyboard declares: applied exactly, through its own macro. */
   layoutPresets: string[];
+  /**
+   * Other standard arrangements that can be laid onto this layout by physical key
+   * position, with the share of this layout's keys that get a key (rest stay blank).
+   */
+  fittedPresets: { name: string; fit: number }[];
   socd: SocdCapabilities;
   keycodes: readonly SupportedKeycode[];
   limits: typeof LIMITS;
 }
+
+/**
+ * A fitted arrangement is offered when at least this share of the layout's keys get a
+ * key from it. Below that it is a different board's keymap, not this board's.
+ */
+export const MIN_FITTED_PRESET_SHARE = 0.5;
 
 export interface BuildContextOptions {
   configuration: Configuration;
@@ -100,6 +112,14 @@ export function buildAssistantContext(options: BuildContextOptions): AssistantCo
     layout.positions.map((p) => legendOf(layer.bindings[String(p.index)], configuration.macros)),
   );
 
+  const communityKeymaps = catalog.communityKeymaps ?? {};
+  const exactPresets = (entry.communityLayouts ?? []).map((c) => c.name).filter((name) => name in communityKeymaps);
+  const fittedPresets = Object.values(communityKeymaps)
+    .filter((k) => !exactPresets.includes(k.name))
+    .map((k) => ({ name: k.name, fit: communityKeymapFit(layout, k) }))
+    .filter((f) => f.fit >= MIN_FITTED_PRESET_SHARE)
+    .sort((a, b) => b.fit - a.fit || (a.name < b.name ? -1 : 1));
+
   const imported = importDefaultKeymap({
     keyboard: entry,
     layoutId: configuration.layoutId,
@@ -121,7 +141,8 @@ export function buildAssistantContext(options: BuildContextOptions): AssistantCo
     defaultKeymap: imported.available
       ? { available: true, source: imported.source, layers: imported.layers.length }
       : { available: false, reason: imported.reason },
-    layoutPresets: (entry.communityLayouts ?? []).map((c) => c.name).filter((name) => name in (catalog.communityKeymaps ?? {})),
+    layoutPresets: exactPresets,
+    fittedPresets,
     socd: socdCapabilitiesFor(catalog.catalogVersion, entry.keyboardId),
     keycodes: SUPPORTED_KEYCODES,
     limits: LIMITS,
@@ -177,12 +198,21 @@ export function renderAssistantContext(ctx: AssistantContext): string {
       : `QMK default keymap: NOT available for this keyboard (${ctx.defaultKeymap.reason}); apply_default_keymap will fail.`,
   );
 
-  out.push(
-    ctx.layoutPresets.length > 0
-      ? `Layout presets (QMK's canonical keymap for a standard layout, via apply_layout_preset): ${ctx.layoutPresets.join(', ')}. ` +
-          'Names: 60/65/75/tkl/fullsize = size; ansi/iso/jis/abnt2 = standard; hhkb = HHKB arrangement; wkl = winkeyless; tsangan = Tsangan bottom row; split_bs/rshift = split keys; ortho_RxC = grid; alice; ergodox; numpad.'
-      : 'Layout presets: none for this keyboard. Requests for a named standard layout (HHKB, WKL, ISO, …) are unsupported unless the user spells out each key.',
-  );
+  const presetLegend =
+    'Names: 60/65/75/tkl/fullsize = size; ansi/iso/jis = standard; hhkb = HHKB arrangement; wkl = winkeyless; tsangan = Tsangan bottom row; split_bs/rshift = split keys; ortho_RxC = grid; alice; ergodox; numpad.';
+  if (ctx.layoutPresets.length > 0 || ctx.fittedPresets.length > 0) {
+    out.push('Layout presets (QMK\'s canonical keymap for a standard arrangement, via apply_layout_preset):');
+    if (ctx.layoutPresets.length > 0) out.push(`  exact fit for this keyboard: ${ctx.layoutPresets.join(', ')}`);
+    if (ctx.fittedPresets.length > 0) {
+      out.push(
+        `  by physical key position (keys of this board with no twin in the arrangement stay blank; share of keys covered in brackets): ` +
+          ctx.fittedPresets.map((f) => `${f.name} [${Math.round(f.fit * 100)}%]`).join(', '),
+      );
+    }
+    out.push(`  ${presetLegend} Use a listed name exactly.`);
+  } else {
+    out.push('Layout presets: none fit this keyboard. Requests for a named standard layout (HHKB, WKL, ISO, …) are unsupported unless the user spells out each key.');
+  }
   if (ctx.socd.available) {
     out.push(
       `SOCD: available on this keyboard. Policies: ${SOCD_POLICIES.map((p) => `${p.id} — ${p.description.replace(/\.$/, '')}`).join(' | ')}. ` +

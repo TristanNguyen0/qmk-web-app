@@ -18,6 +18,7 @@ import {
   LIMITS,
   SOCD_DIRECTIONAL_KEYCODES,
   SOCD_POLICIES,
+  communityKeymapFit,
   importCommunityKeymap,
   importDefaultKeymap,
   validateConfiguration,
@@ -32,6 +33,7 @@ import {
   type SupportedCatalogKeyboard,
 } from '@qmk-web-app/domain';
 import type { AssistantProposal, BindingSpec, KeyRef, LayerRef, Operation } from './proposal.ts';
+import { MIN_FITTED_PRESET_SHARE } from './context.ts';
 import { describePosition, resolveKey, resolveKeycode, resolveLayer, type RefFailure } from './refs.ts';
 
 export interface ResolutionIssue {
@@ -238,18 +240,32 @@ function applyOperation(ctx: Ctx, operation: Operation): void {
     }
 
     case 'apply_layout_preset': {
-      const offered = ctx.keyboard.communityLayouts ?? [];
+      const exact = new Set((ctx.keyboard.communityLayouts ?? []).map((c) => c.name));
+      // Every arrangement the catalog holds is a candidate: exact ones through the
+      // keyboard's own macro, the rest fitted by physical position (and only offered
+      // when they cover enough of the layout to be this board's arrangement at all).
+      const offered = Object.values(ctx.communityKeymaps)
+        .map((k) => ({ name: k.name, exact: exact.has(k.name), fit: exact.has(k.name) ? 1 : communityKeymapFit(ctx.layout, k) }))
+        .filter((c) => c.fit >= MIN_FITTED_PRESET_SHARE)
+        .sort((a, b) => Number(b.exact) - Number(a.exact) || b.fit - a.fit || (a.name < b.name ? -1 : 1));
+      const describe = (c: { name: string; exact: boolean; fit: number }) =>
+        c.exact ? c.name : `${c.name} (fitted, ${Math.round(c.fit * 100)}% of keys)`;
       const wanted = operation.preset.trim().toLowerCase().replace(/[\s-]+/g, '_');
-      // Exact name first; then a unique name containing the request ("hhkb" → 60_hhkb).
+      // Exact name first; then names containing the request ("hhkb" → 60_hhkb), best fit first.
       let matches = offered.filter((c) => c.name === wanted);
       if (matches.length === 0) matches = offered.filter((c) => c.name.includes(wanted));
-      if (matches.length !== 1) {
+      if (matches.length === 0) {
         fail({
-          reason:
-            matches.length === 0
-              ? `"${operation.preset}" is not a layout preset available for this keyboard`
-              : `"${operation.preset}" matches more than one preset; name one exactly`,
-          candidates: (matches.length === 0 ? offered : matches).map((c) => c.name),
+          reason: `"${operation.preset}" is not a layout preset that fits this keyboard`,
+          candidates: offered.map(describe),
+        });
+      }
+      // Several names contain the request (e.g. "ansi"): the best-fitting one is the
+      // right reading only when it is clearly better; otherwise ask for an exact name.
+      if (matches.length > 1 && matches[0]!.exact === matches[1]!.exact && matches[0]!.fit - matches[1]!.fit < 0.05) {
+        fail({
+          reason: `"${operation.preset}" matches more than one preset; name one exactly`,
+          candidates: matches.map(describe),
         });
       }
       const name = matches[0]!.name;
@@ -269,7 +285,7 @@ function applyOperation(ctx: Ctx, operation: Operation): void {
       }
       ctx.changes.push({
         description:
-          `Replaced all layers with QMK's ${name} layout preset (${imported.source}): ${imported.layers.length} layer${imported.layers.length === 1 ? '' : 's'}` +
+          `Replaced all layers with QMK's ${name} layout preset (${imported.source}${exact.has(name) ? '' : ', fitted by physical key position'}): ${imported.layers.length} layer${imported.layers.length === 1 ? '' : 's'}` +
           (imported.unmapped.length > 0 ? `; ${imported.unmapped.length} key${imported.unmapped.length === 1 ? '' : 's'} it binds to unsupported features left unassigned` : '') +
           (imported.unmatchedPositions > 0 ? `; ${imported.unmatchedPositions} key${imported.unmatchedPositions === 1 ? '' : 's'} of this layout have no place in that preset and stay unassigned` : ''),
       });

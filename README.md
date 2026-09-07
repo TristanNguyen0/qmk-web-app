@@ -25,7 +25,7 @@ still outstanding.
 ```bash
 pnpm install
 pnpm qmk:fetch --submodules            # fetch + verify the pinned QMK tree (~1.5 GB with submodules)
-docker build -t qmk-web-app/qmk-build:0.33.13-4 infra/qmk
+docker build -t qmk-web-app/qmk-build:0.33.13-5 infra/qmk
 
 pnpm catalog:build --dump var/catalog-dumps/<version>.ndjson   # all 3,748 keyboards (~10 min); keep the dump so a
                                                                # normalizer change can republish without re-extracting
@@ -44,7 +44,7 @@ Open a keyboard, edit its keymap, and press **Build firmware**. A `crkbd/rev1` b
 20 seconds end to end.
 
 ```bash
-node --experimental-strip-types services/worker/scripts/smoke-build.ts catalogs/0.33.13-3
+node --experimental-strip-types services/worker/scripts/smoke-build.ts catalogs/0.33.13-4
 ```
 
 The smoke build bypasses the queue and takes a validated configuration straight through generation,
@@ -70,6 +70,9 @@ byte-identical.
   excluded) and records which each keyboard supports — 1,126 boards have at least one. They
   appear as further starting points on the keyboard page, and "make an HHKB layout" in the
   assistant applies QMK's own `60_hhkb` keymap rather than the model's recollection of one.
+  Each keymap also carries its layout's geometry, so an arrangement a board does not declare can
+  still be laid onto it by exact physical key position — HHKB onto a 65% gives the alphas and
+  modifiers the HHKB arrangement and leaves the board's extra column blank, counted and reported.
 - Keyboards the catalog cannot offer are reachable and explain *why*, rather than 404ing.
 - Click or use arrow keys to inspect a key. Selection is signalled by fill, stroke width, and an
   inset ring, so it never depends on colour alone.
@@ -153,8 +156,8 @@ does not make that claim on anyone's behalf.
 A published catalog is a directory, not one file:
 
 ```text
-catalogs/0.33.13-3/
-  index.json              1.5 MB — metadata, QMK's keycode alias table and community-layout keymaps, one summary per keyboard
+catalogs/0.33.13-4/
+  index.json              1.6 MB — metadata, QMK's keycode alias table and community-layout keymaps, one summary per keyboard
   keyboards/NNNN.json     sharded detail, loaded on demand
 ```
 
@@ -166,8 +169,8 @@ a request.
 
 ```bash
 pnpm typecheck
-pnpm test          # 645 tests, no Docker required
-pnpm socd:matrix catalogs/0.33.13-3   # real SOCD compiles; needs Docker + the pinned tree
+pnpm test          # 648 tests, no Docker required
+pnpm socd:matrix catalogs/0.33.13-4   # real SOCD compiles; needs Docker + the pinned tree
 ```
 
 `pnpm test` runs the Postgres half of the repository contract suites too, when a database is

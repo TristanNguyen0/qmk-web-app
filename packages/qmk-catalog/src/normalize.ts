@@ -13,6 +13,7 @@ import {
   LIMITS,
   isValidKeyboardIdShape,
   type Catalog,
+  type CatalogCommunityKeyGeometry,
   type CatalogCommunityKeymap,
   type CatalogCommunityLayoutRef,
   type CatalogDefaultKeymap,
@@ -28,8 +29,9 @@ import {
 /**
  * v2: default keymaps and the keycode alias table (extractor v2 dumps).
  * v3: community-layout keymaps and per-keyboard `communityLayouts` (extractor v3).
+ * v4: community keymaps carry their layout geometry (extractor v4).
  */
-export const NORMALIZER_VERSION = 3;
+export const NORMALIZER_VERSION = 4;
 
 /**
  * Longest keycode token we will carry. QMK's longest real composite in a default
@@ -75,6 +77,8 @@ export interface ExtractorCommunityKeymapRecord {
   status: 'resolved' | 'failed';
   source?: unknown;
   layers?: unknown;
+  /** The layout's `layout` array from its info.json; absent in v3 dumps. */
+  positions?: unknown;
   error?: { kind: string; message: string };
 }
 
@@ -322,7 +326,25 @@ function normalizeCommunityKeymap(record: ExtractorCommunityKeymapRecord): Catal
   if (distinct <= PLACEHOLDER_DISTINCT_RATIO) {
     return `${record.source} is a placeholder pattern (${new Set(base).size} distinct keycodes across ${base.length} keys), not a usable arrangement`;
   }
-  return { name: record.layout, source: record.source, layers: layers.layers };
+
+  // Geometry, one entry per position. Width/height default to 1 as in QMK's own
+  // renderer (the same reading normalizeLayout makes); anything unreadable rejects
+  // the keymap, because a wrong geometry would lay keys onto the wrong switches.
+  if (!Array.isArray(record.positions) || record.positions.length !== length) {
+    return `${record.source}: layout geometry is missing or does not match the keymap (${Array.isArray(record.positions) ? record.positions.length : 'none'} vs ${length} keys)`;
+  }
+  const positions: CatalogCommunityKeyGeometry[] = [];
+  for (const entry of record.positions as unknown[]) {
+    if (typeof entry !== 'object' || entry === null) return `${record.source}: unreadable key geometry`;
+    const e = entry as Record<string, unknown>;
+    const x = asFiniteNumber(e['x']);
+    const y = asFiniteNumber(e['y']);
+    const w = e['w'] === undefined ? 1 : asFiniteNumber(e['w']);
+    const h = e['h'] === undefined ? 1 : asFiniteNumber(e['h']);
+    if (x === null || y === null || w === null || h === null || w <= 0 || h <= 0) return `${record.source}: unreadable key geometry`;
+    positions.push({ x, y, w, h });
+  }
+  return { name: record.layout, source: record.source, layers: layers.layers, positions };
 }
 
 /** At or below this share of distinct base-layer keycodes a community keymap is a test pattern. */
