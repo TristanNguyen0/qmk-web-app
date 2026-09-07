@@ -14,6 +14,8 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import {
   ERROR_CODES,
   SUPPORTED_KEYCODES,
+  importCommunityKeymap,
+  importDefaultKeymap,
   isValidKeyboardIdShape,
   socdCapabilitiesFor,
   type SupportedCatalogKeyboard,
@@ -27,6 +29,12 @@ interface VersionParams {
 
 interface WildcardParams extends VersionParams {
   '*': string;
+}
+
+interface DefaultKeymapQuery {
+  layout?: string;
+  /** A community layout name from the keyboard's `communityLayouts`; absent means QMK's own default. */
+  preset?: string;
 }
 
 interface ListQuery {
@@ -187,6 +195,63 @@ export function registerCatalogRoutes(app: FastifyInstance, store: CatalogStore)
     },
   );
 
+  // The keyboard's QMK default keymap, interpreted into the product's binding model
+  // for one layout — the starting point offered when a user begins a configuration.
+  // The response says exactly what came from QMK, what could not be represented, and
+  // where the default lives in the pinned tree; the client shows that attribution
+  // rather than presenting QMK's choices as the user's own.
+  app.get<{ Params: WildcardParams; Querystring: DefaultKeymapQuery }>(
+    '/v1/catalog/:catalogVersion/default-keymap/*',
+    async (request, reply) => {
+      const version = resolveVersion(store, request.params.catalogVersion);
+      const keyboardId = request.params['*'];
+      if (!isValidKeyboardIdShape(keyboardId)) {
+        return sendBadRequest(reply, 'keyboardId is not a valid keyboard identifier');
+      }
+      const keyboard = store.getSupportedKeyboard(version, keyboardId);
+      if (!keyboard) {
+        return sendNotFound(reply, 'no such supported keyboard in this catalog version');
+      }
+      const layoutId = request.query.layout;
+      if (typeof layoutId !== 'string' || layoutId === '') {
+        return sendBadRequest(reply, 'layout query parameter is required');
+      }
+      if (!keyboard.layouts.some((l) => l.name === layoutId)) {
+        return sendNotFound(reply, 'this keyboard has no such layout in this catalog version');
+      }
+
+      const meta = store.getMeta(version);
+      const preset = request.query.preset;
+      if (preset !== undefined) {
+        if (typeof preset !== 'string' || !/^[a-z0-9_]{1,64}$/.test(preset)) {
+          return sendBadRequest(reply, 'preset must be a community layout name');
+        }
+        if (!keyboard.communityLayouts?.some((c) => c.name === preset)) {
+          return sendNotFound(reply, 'this keyboard has no such layout preset in this catalog version');
+        }
+      }
+
+      const result =
+        preset === undefined
+          ? importDefaultKeymap({ keyboard, layoutId, keycodeAliases: meta.keycodeAliases })
+          : importCommunityKeymap({
+              keyboard,
+              layoutId,
+              name: preset,
+              communityKeymaps: meta.communityKeymaps,
+              keycodeAliases: meta.keycodeAliases,
+            });
+      return reply.send({
+        apiVersion: API_VERSION,
+        catalogVersion: version,
+        keyboardId,
+        layoutId,
+        ...(preset === undefined ? {} : { preset }),
+        ...result,
+      });
+    },
+  );
+
   app.setErrorHandler((error, _request, reply: FastifyReply) => {
     if (error instanceof CatalogNotFoundError) {
       return sendNotFound(reply, error.message);
@@ -217,6 +282,8 @@ function projectKeyboard(kb: SupportedCatalogKeyboard) {
       positionCount: layout.positions.length,
       positions: layout.positions,
     })),
+    // Standard arrangements QMK ships a keymap for and this keyboard supports (v3 catalogs).
+    communityLayouts: kb.communityLayouts ?? [],
     provenance: {
       keyboardFolder: kb.provenance.keyboardFolder,
       qmkCommit: kb.provenance.qmkCommit,

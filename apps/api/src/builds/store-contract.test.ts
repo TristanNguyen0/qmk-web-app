@@ -12,37 +12,16 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import pg from 'pg';
 import { BUILD_LIMITS, type BuildRecord, type Configuration } from '@qmk-web-app/domain';
-import { runMigrations } from '../db/migrate.ts';
+import { connectTestDatabase, TEST_DATABASE_URL } from '../db/test-database.ts';
 import { InMemoryConfigurationRepository } from '../configurations/memory-repository.ts';
 import { PostgresConfigurationRepository } from '../configurations/postgres-repository.ts';
 import type { ConfigurationRecord, ConfigurationRepository } from '../configurations/types.ts';
 import { InMemoryBuildStore, PostgresBuildStore } from '@qmk-web-app/build-queue';
 import type { BuildQueue, BuildRepository } from '@qmk-web-app/build-queue';
 
-const DATABASE_URL =
-  process.env['QWA_TEST_DATABASE_URL'] ??
-  process.env['QWA_DATABASE_URL'] ??
-  'postgres://qwa:qwa_dev_password@127.0.0.1:5433/qwa';
-
-async function postgresAvailable(): Promise<pg.Pool | null> {
-  const pool = new pg.Pool({
-    connectionString: DATABASE_URL,
-    max: 4,
-    connectionTimeoutMillis: 1500,
-  });
-  try {
-    await pool.query('SELECT 1');
-    await runMigrations(pool);
-    return pool;
-  } catch {
-    await pool.end().catch(() => {});
-    return null;
-  }
-}
-
-const pool = await postgresAvailable();
+// Never the development database: see db/test-database.ts.
+const pool = await connectTestDatabase({ max: 4 });
 
 const ALICE = '11111111-1111-4111-8111-111111111111';
 const BOB = '22222222-2222-4222-8222-222222222222';
@@ -835,7 +814,7 @@ function contractFor(name: string, makeBackend: () => Promise<Backend>) {
     // awaiting sequentially would not exercise the race and would make these pass
     // against a store with no lock at all.
     //
-    // The Postgres backend's pool has `max: 4` (see `postgresAvailable()` above), so
+    // The Postgres backend's pool has `max: 4` (see `connectTestDatabase({ max: 4 })` above), so
     // at most four of these transactions are genuinely simultaneous against Postgres.
     // That is enough to expose the race — RESEARCH.md's Pitfall 1 shows two
     // concurrent racers suffice — but it is a comment, not a guarantee of full
@@ -982,6 +961,7 @@ if (pool) {
     };
   });
 } else {
+  console.warn(`\n[store-contract] Postgres not reachable at ${TEST_DATABASE_URL} — PostgresBuildStore suite skipped.\n`);
   describe.skip('PostgresBuildStore (no database reachable)', () => {
     it('is skipped', () => {});
   });

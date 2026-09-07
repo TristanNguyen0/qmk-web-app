@@ -2,10 +2,13 @@ export {
   normalizeCatalog,
   parseExtractorDump,
   keycodeNamesFromSpec,
+  keycodeAliasesFromSpec,
   CatalogNormalizationError,
   NORMALIZER_VERSION,
 } from './normalize.ts';
 export type {
+  ExtractorCommunityKeymapRecord,
+  ExtractorDefaultKeymap,
   ExtractorKeyboardRecord,
   ExtractorKeycodeSpec,
   ExtractorProvenance,

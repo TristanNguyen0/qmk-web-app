@@ -25,20 +25,26 @@ still outstanding.
 ```bash
 pnpm install
 pnpm qmk:fetch --submodules            # fetch + verify the pinned QMK tree (~1.5 GB with submodules)
-docker build -t qmk-web-app/qmk-build:0.33.13-1 infra/qmk
+docker build -t qmk-web-app/qmk-build:0.33.13-4 infra/qmk
 
-pnpm catalog:build                     # discover all 3,748 keyboards (~10 min)
+pnpm catalog:build --dump var/catalog-dumps/<version>.ndjson   # all 3,748 keyboards (~10 min); keep the dump so a
+                                                               # normalizer change can republish without re-extracting
 
 docker compose -f infra/deploy/docker-compose.yml up -d   # Postgres
 pnpm dev                               # API on :3001, web UI on :3000
 pnpm worker                            # build worker, in a second terminal
 ```
 
+`pnpm dev`, `pnpm worker`, and `pnpm assistant:try` read a `.env` file at the repository root if
+one exists (Node's `--env-file-if-exists`). At minimum it needs `QWA_SESSION_SECRET`; add
+`QWA_ASSISTANT_API_KEY` (Anthropic or OpenRouter) to enable the assistant. See the header of
+`apps/api/src/server.ts` for every variable.
+
 Open a keyboard, edit its keymap, and press **Build firmware**. A `crkbd/rev1` build takes about
 20 seconds end to end.
 
 ```bash
-node --experimental-strip-types services/worker/scripts/smoke-build.ts catalogs/0.33.13-1
+node --experimental-strip-types services/worker/scripts/smoke-build.ts catalogs/0.33.13-3
 ```
 
 The smoke build bypasses the queue and takes a validated configuration straight through generation,
@@ -52,6 +58,18 @@ byte-identical.
   rotated keys.
 - Keys show their **physical position index and matrix coordinates, not keycodes** — nothing is
   bound yet, and inventing legends would misrepresent the hardware.
+- **Start from QMK's default keymap.** The catalog carries each keyboard's `keymaps/default`
+  (3,639 of 3,743 keyboards), read by QMK's own keymap parser and attributed to its path in the
+  pinned tree. It is offered as the starting point, alongside a blank start. Keys QMK's default
+  uses that this editor does not offer yet (`QK_BOOT`, RGB controls, …) are listed and left
+  unassigned rather than substituted; defaults written for a different layout of the same
+  keyboard are carried across by physical switch.
+- **Layout presets.** QMK also ships a canonical keymap for each of its community layouts
+  (`layouts/default/60_hhkb`, `60_ansi_wkl`, `tkl_iso`, `alice`, …). The catalog carries the 99
+  that are real arrangements (six ortho grids are `KC_A, KC_B, …` compile patterns and are
+  excluded) and records which each keyboard supports — 1,126 boards have at least one. They
+  appear as further starting points on the keyboard page, and "make an HHKB layout" in the
+  assistant applies QMK's own `60_hhkb` keymap rather than the model's recollection of one.
 - Keyboards the catalog cannot offer are reachable and explain *why*, rather than 404ing.
 - Click or use arrow keys to inspect a key. Selection is signalled by fill, stroke width, and an
   inset ring, so it never depends on colour alone.
@@ -64,6 +82,13 @@ byte-identical.
 - **SOCD**: on a compile-verified keyboard, enable SOCD resolution, choose a policy, and pick the
   four directional keys. On every other keyboard the panel says *why* it is unavailable instead of
   hiding. Compliance is stated as your responsibility; the product makes no claim.
+- **Describe a change** (opt-in, `QWA_ASSISTANT_API_KEY` — an Anthropic or OpenRouter key): say what you want in plain words —
+  "default QWERTY, SOCD on WASD, an Fn layer on right Alt" — and review exactly what would
+  change before applying it as one undoable step. The model can only propose typed operations
+  the editor already offers; code resolves them against the catalog and runs the same server
+  validation as a hand edit, and anything it cannot do is listed as *not possible* rather than
+  approximated ([ADR 0008](docs/adr/0008-assistant-proposes-operations-not-configurations.md)).
+  `pnpm assistant:try crkbd/rev1 "..."` runs one request from the terminal.
 - **Build and download**: request a build, watch it progress, cancel it, download the firmware with
   its SHA-256, or read the sanitized compiler log when it fails. A build compiles a *stored
   revision*, so the button is disabled until your edits have been saved.
@@ -128,8 +153,8 @@ does not make that claim on anyone's behalf.
 A published catalog is a directory, not one file:
 
 ```text
-catalogs/0.33.13-1/
-  index.json              1.3 MB — metadata + one summary per keyboard
+catalogs/0.33.13-3/
+  index.json              1.5 MB — metadata, QMK's keycode alias table and community-layout keymaps, one summary per keyboard
   keyboards/NNNN.json     sharded detail, loaded on demand
 ```
 
@@ -141,12 +166,15 @@ a request.
 
 ```bash
 pnpm typecheck
-pnpm test          # 496 tests, no Docker required
-pnpm socd:matrix catalogs/0.33.13-1   # real SOCD compiles; needs Docker + the pinned tree
+pnpm test          # 645 tests, no Docker required
+pnpm socd:matrix catalogs/0.33.13-3   # real SOCD compiles; needs Docker + the pinned tree
 ```
 
 `pnpm test` runs the Postgres half of the repository contract suites too, when a database is
-reachable; it skips them otherwise, so the default run stays hermetic.
+reachable; it skips them otherwise, so the default run stays hermetic. Those suites use their own
+database, `qwa_test` on the same compose Postgres (created on first run; `QWA_TEST_DATABASE_URL`
+overrides it), and refuse to run against any database without "test" in its name — so running the
+tests never touches what you are editing in `pnpm dev`.
 
 ## Pinned QMK revision
 
@@ -174,6 +202,9 @@ packages/
                    digest-verified code that places it in a build workspace
   build-queue/     BuildRepository + BuildQueue contracts, in-memory and Postgres stores
   artifact-store/  ArtifactStore contract, key derivation, filesystem and in-memory stores
+  assistant/       the natural-language assistant's contract: the typed operation vocabulary a
+                   model may propose, the resolver that turns proposals into a validated
+                   candidate configuration (no LLM involved), and the grounding context
   qmk-fixtures/    small fixtures captured from real extractions of the pinned tree
 infra/deploy/      docker-compose for local Postgres
 services/

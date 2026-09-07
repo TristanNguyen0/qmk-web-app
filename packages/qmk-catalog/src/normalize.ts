@@ -13,14 +13,29 @@ import {
   LIMITS,
   isValidKeyboardIdShape,
   type Catalog,
+  type CatalogCommunityKeymap,
+  type CatalogCommunityLayoutRef,
+  type CatalogDefaultKeymap,
+  type CatalogDefaultKeymapLayer,
   type CatalogKeyboard,
   type CatalogKeyPosition,
   type CatalogLayout,
+  type DefaultKeymapUnavailableReason,
   type UnsupportedCatalogKeyboard,
   type UnsupportedReason,
 } from '@qmk-web-app/domain';
 
-export const NORMALIZER_VERSION = 1;
+/**
+ * v2: default keymaps and the keycode alias table (extractor v2 dumps).
+ * v3: community-layout keymaps and per-keyboard `communityLayouts` (extractor v3).
+ */
+export const NORMALIZER_VERSION = 3;
+
+/**
+ * Longest keycode token we will carry. QMK's longest real composite in a default
+ * keymap is well under this; anything longer is not a keycode we can reason about.
+ */
+const MAX_KEYCODE_TOKEN_LENGTH = 64;
 
 export interface ExtractorProvenance {
   type: 'provenance';
@@ -36,11 +51,30 @@ export interface ExtractorKeycodeSpec {
   keycodes: Record<string, { key?: unknown; group?: unknown; aliases?: unknown }>;
 }
 
+export interface ExtractorDefaultKeymap {
+  status: 'resolved' | 'not_found' | 'failed';
+  source?: unknown;
+  format?: unknown;
+  layers?: unknown;
+  error?: { kind: string; message: string };
+}
+
 export interface ExtractorKeyboardRecord {
   type: 'keyboard';
   keyboardId: string;
   status: 'resolved' | 'extraction_failed';
   info?: Record<string, unknown>;
+  /** Absent in extractor v1 dumps. */
+  default_keymap?: ExtractorDefaultKeymap;
+  error?: { kind: string; message: string };
+}
+
+export interface ExtractorCommunityKeymapRecord {
+  type: 'community_keymap';
+  layout: string;
+  status: 'resolved' | 'failed';
+  source?: unknown;
+  layers?: unknown;
   error?: { kind: string; message: string };
 }
 
@@ -48,6 +82,7 @@ export type ExtractorRecord =
   | ExtractorProvenance
   | ExtractorKeycodeSpec
   | ExtractorKeyboardRecord
+  | ExtractorCommunityKeymapRecord
   | { type: 'summary'; [k: string]: unknown };
 
 export class CatalogNormalizationError extends Error {}
@@ -143,7 +178,191 @@ function normalizeLayout(name: string, raw: unknown): CatalogLayout | null {
   return { name, positions };
 }
 
-function normalizeKeyboard(record: ExtractorKeyboardRecord, qmkCommit: string, extractorVersion: number): CatalogKeyboard {
+function unavailableDefaultKeymap(
+  reason: DefaultKeymapUnavailableReason,
+  detail: string,
+): CatalogDefaultKeymap {
+  return { available: false, reason, detail };
+}
+
+/**
+ * Converts the extractor's default-keymap report. The layer data must line up with a
+ * layout this keyboard actually declares, position for position; anything else is
+ * recorded as unavailable with the observed reason rather than trimmed to fit.
+ */
+function normalizeDefaultKeymap(
+  raw: ExtractorDefaultKeymap | undefined,
+  layouts: readonly CatalogLayout[],
+  layoutAliases: unknown,
+): CatalogDefaultKeymap {
+  if (raw === undefined) {
+    return unavailableDefaultKeymap('not_extracted', 'extractor did not report a default keymap');
+  }
+  if (raw.status === 'not_found') {
+    return unavailableDefaultKeymap('not_found', 'QMK found no default keymap for this keyboard');
+  }
+  if (raw.status !== 'resolved') {
+    return unavailableDefaultKeymap(
+      'extraction_failed',
+      raw.error ? `${raw.error.kind}: ${raw.error.message}` : 'default keymap could not be read',
+    );
+  }
+  if (typeof raw.source !== 'string' || raw.source === '') {
+    return unavailableDefaultKeymap('extraction_failed', 'default keymap has no source path');
+  }
+  if (!Array.isArray(raw.layers) || raw.layers.length === 0) {
+    return unavailableDefaultKeymap('no_layers', `${raw.source} declares no layers`);
+  }
+
+  // Every layer must name the same layout macro. The extractor records each layer's
+  // macro as QMK parsed it; a keymap mixing macros has no single position mapping.
+  const layoutNames = new Set<string>();
+  for (const layer of raw.layers as unknown[]) {
+    const name = (layer as { layout?: unknown } | null)?.layout;
+    if (typeof name === 'string' && name !== '') layoutNames.add(name);
+  }
+  if (layoutNames.size === 0) {
+    return unavailableDefaultKeymap('unknown_layout', `${raw.source} names no layout macro`);
+  }
+  if (layoutNames.size > 1) {
+    return unavailableDefaultKeymap(
+      'mixed_layouts',
+      `${raw.source} uses more than one layout macro: ${[...layoutNames].sort().join(', ')}`,
+    );
+  }
+  const [rawLayoutName] = [...layoutNames] as [string];
+
+  // Resolve through QMK's own `layout_aliases` (info.json), the same table its
+  // build uses, so `LAYOUT_planck_grid` reaches `LAYOUT_ortho_4x12`.
+  let layoutName = rawLayoutName;
+  if (typeof layoutAliases === 'object' && layoutAliases !== null) {
+    const alias = (layoutAliases as Record<string, unknown>)[rawLayoutName];
+    if (typeof alias === 'string' && alias !== '') layoutName = alias;
+  }
+  const layout = layouts.find((l) => l.name === layoutName);
+  if (!layout) {
+    return unavailableDefaultKeymap(
+      'unknown_layout',
+      `${raw.source} targets ${rawLayoutName}, which this keyboard does not declare`,
+    );
+  }
+
+  const layers = readKeymapLayers(raw.layers as unknown[], raw.source, layout.positions.length, layoutName);
+  if ('reason' in layers) return unavailableDefaultKeymap(layers.reason, layers.detail);
+
+  return { available: true, source: raw.source, layout: layoutName, layers: layers.layers };
+}
+
+/**
+ * Reads parsed keymap layers, requiring every layer to have exactly `expectedLength`
+ * usable string tokens. Shared by the keyboard default and community keymaps so the
+ * two cannot drift in what they accept.
+ */
+function readKeymapLayers(
+  rawLayers: unknown[],
+  source: string,
+  expectedLength: number,
+  layoutName: string,
+): { layers: CatalogDefaultKeymapLayer[] } | { reason: DefaultKeymapUnavailableReason; detail: string } {
+  const layers: CatalogDefaultKeymapLayer[] = [];
+  for (const [index, entry] of rawLayers.entries()) {
+    if (typeof entry !== 'object' || entry === null) {
+      return { reason: 'unreadable_keycode', detail: `${source} layer ${index} is not an object` };
+    }
+    const e = entry as { name?: unknown; keycodes?: unknown };
+    if (!Array.isArray(e.keycodes)) {
+      return { reason: 'unreadable_keycode', detail: `${source} layer ${index} has no keycode list` };
+    }
+    if (e.keycodes.length !== expectedLength) {
+      return {
+        reason: 'layer_length_mismatch',
+        detail: `${source} layer ${index} has ${e.keycodes.length} keycodes but ${layoutName} has ${expectedLength} positions`,
+      };
+    }
+    const keycodes: string[] = [];
+    for (const token of e.keycodes as unknown[]) {
+      if (typeof token !== 'string' || token === '' || token.length > MAX_KEYCODE_TOKEN_LENGTH) {
+        return { reason: 'unreadable_keycode', detail: `${source} layer ${index} contains a keycode token that is not a usable string` };
+      }
+      keycodes.push(token);
+    }
+    const name = typeof e.name === 'string' && e.name !== '' ? e.name : null;
+    layers.push({ name, keycodes });
+  }
+  return { layers };
+}
+
+/**
+ * A community keymap is usable only if every layer names `LAYOUT_<name>` and the
+ * layers agree on length. The per-keyboard fit check (does this keyboard's
+ * `LAYOUT_<name>` have that many positions?) happens in `communityLayoutsFor`.
+ */
+function normalizeCommunityKeymap(record: ExtractorCommunityKeymapRecord): CatalogCommunityKeymap | string {
+  if (!/^[a-z0-9_]+$/.test(record.layout)) return `community layout name "${record.layout}" is not a usable identifier`;
+  if (record.status !== 'resolved') return record.error ? `${record.error.kind}: ${record.error.message}` : 'not resolved';
+  if (typeof record.source !== 'string' || record.source === '') return `${record.layout}: no source path`;
+  if (!Array.isArray(record.layers) || record.layers.length === 0) return `${record.source} declares no layers`;
+  const expectedMacro = `LAYOUT_${record.layout}`;
+  for (const [i, layer] of (record.layers as unknown[]).entries()) {
+    const macro = (layer as { layout?: unknown } | null)?.layout;
+    if (macro !== expectedMacro) return `${record.source} layer ${i} uses ${String(macro)}, expected ${expectedMacro}`;
+  }
+  const first = (record.layers[0] as { keycodes?: unknown }).keycodes;
+  const length = Array.isArray(first) ? first.length : -1;
+  const layers = readKeymapLayers(record.layers as unknown[], record.source, length, expectedMacro);
+  if ('reason' in layers) return layers.detail;
+
+  // Some community defaults exist only to prove the macro compiles: `KC_A, KC_B, …`
+  // repeated on every row (the ortho grids at the pinned revision). Offering one as a
+  // "layout preset" would hand a user a keyboard that types abcdefghijkl. A real
+  // arrangement binds nearly every base-layer key to something different (the lowest
+  // genuine ratio at the pinned revision is 0.88; the patterns are at or below 0.25).
+  const base = layers.layers[0]!.keycodes;
+  const distinct = new Set(base).size / base.length;
+  if (distinct <= PLACEHOLDER_DISTINCT_RATIO) {
+    return `${record.source} is a placeholder pattern (${new Set(base).size} distinct keycodes across ${base.length} keys), not a usable arrangement`;
+  }
+  return { name: record.layout, source: record.source, layers: layers.layers };
+}
+
+/** At or below this share of distinct base-layer keycodes a community keymap is a test pattern. */
+const PLACEHOLDER_DISTINCT_RATIO = 0.5;
+
+/**
+ * The community layouts this keyboard declares that the catalog can actually offer:
+ * the keymap exists, the keyboard has the `LAYOUT_<name>` macro (directly or via its
+ * own `layout_aliases`), and the keymap's layers fit that macro position for position.
+ */
+function communityLayoutsFor(
+  info: Record<string, unknown>,
+  layouts: readonly CatalogLayout[],
+  communityKeymaps: Readonly<Record<string, CatalogCommunityKeymap>>,
+): CatalogCommunityLayoutRef[] {
+  const declared = asStringArray(info['community_layouts']);
+  const aliases = info['layout_aliases'];
+  const result: CatalogCommunityLayoutRef[] = [];
+  for (const name of [...new Set(declared)].sort()) {
+    const keymap = communityKeymaps[name];
+    if (!keymap) continue;
+    let macro = `LAYOUT_${name}`;
+    if (typeof aliases === 'object' && aliases !== null) {
+      const target = (aliases as Record<string, unknown>)[macro];
+      if (typeof target === 'string' && target !== '') macro = target;
+    }
+    const layout = layouts.find((l) => l.name === macro);
+    if (!layout) continue;
+    if (keymap.layers.some((l) => l.keycodes.length !== layout.positions.length)) continue;
+    result.push({ name, layout: layout.name });
+  }
+  return result;
+}
+
+function normalizeKeyboard(
+  record: ExtractorKeyboardRecord,
+  qmkCommit: string,
+  extractorVersion: number,
+  communityKeymaps: Readonly<Record<string, CatalogCommunityKeymap>>,
+): CatalogKeyboard {
   const { keyboardId } = record;
 
   if (!isValidKeyboardIdShape(keyboardId)) {
@@ -227,6 +446,8 @@ function normalizeKeyboard(record: ExtractorKeyboardRecord, qmkCommit: string, e
     platform: typeof info['platform'] === 'string' ? (info['platform'] as string) : null,
     layouts,
     features,
+    defaultKeymap: normalizeDefaultKeymap(record.default_keymap, layouts, info['layout_aliases']),
+    communityLayouts: communityLayoutsFor(info, layouts, communityKeymaps),
     provenance: {
       keyboardFolder: typeof keyboardFolder === 'string' ? keyboardFolder : keyboardId,
       qmkCommit,
@@ -265,8 +486,17 @@ export function normalizeCatalog(records: readonly ExtractorRecord[], options: N
     throw new CatalogNormalizationError('extractor output contains no keyboards');
   }
 
+  // Global first, so each keyboard can be checked against the keymaps that exist.
+  const communityKeymaps: Record<string, CatalogCommunityKeymap> = {};
+  for (const r of records) {
+    if (r.type !== 'community_keymap') continue;
+    const normalized = normalizeCommunityKeymap(r);
+    // A failed community keymap is simply not offered; it is not a catalog error.
+    if (typeof normalized !== 'string') communityKeymaps[normalized.name] = normalized;
+  }
+
   const keyboards = keyboardRecords
-    .map((r) => normalizeKeyboard(r, provenance.qmkCommit, provenance.extractorVersion))
+    .map((r) => normalizeKeyboard(r, provenance.qmkCommit, provenance.extractorVersion, communityKeymaps))
     .sort((a, b) => (a.keyboardId < b.keyboardId ? -1 : a.keyboardId > b.keyboardId ? 1 : 0));
 
   return {
@@ -276,8 +506,27 @@ export function normalizeCatalog(records: readonly ExtractorRecord[], options: N
     normalizerVersion: NORMALIZER_VERSION,
     generatedAt: options.generatedAt ?? new Date().toISOString(),
     keycodeSpecVersion: keycodeSpec.version,
+    keycodeAliases: keycodeAliasesFromSpec(keycodeSpec),
+    communityKeymaps: Object.fromEntries(Object.entries(communityKeymaps).sort(([a], [b]) => (a < b ? -1 : 1))),
     keyboards,
   };
+}
+
+/**
+ * QMK's alias table: alias → canonical `key` name, exactly as the spec lists it. Sorted
+ * so catalog output is deterministic.
+ */
+export function keycodeAliasesFromSpec(spec: ExtractorKeycodeSpec): Record<string, string> {
+  const pairs: [string, string][] = [];
+  for (const entry of Object.values(spec.keycodes)) {
+    if (typeof entry.key !== 'string') continue;
+    for (const alias of asStringArray(entry.aliases)) {
+      // QMK uses "!reset!" as a sentinel in alias lists, not a keycode name.
+      if (!alias.startsWith('!')) pairs.push([alias, entry.key]);
+    }
+  }
+  pairs.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return Object.fromEntries(pairs);
 }
 
 /** The set of keycode names QMK defines at the pinned revision, for allowlist checks. */

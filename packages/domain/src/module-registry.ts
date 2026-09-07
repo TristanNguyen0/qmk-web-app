@@ -233,6 +233,41 @@ export const MODULE_REGISTRY: Readonly<Record<'qmkweb/socd_cleaner', CuratedModu
             'pnpm socd:matrix catalogs/0.33.13-1 (2026-09-02 run, both policies; first ' +
             'ARM/STM32 compile, .bin artifact, 64696 bytes)',
         },
+        // Catalog 0.33.13-2 (extractor v2 / normalizer v2: default keymaps and the
+        // keycode alias table) re-earned both records with a fresh matrix run rather
+        // than inheriting them: the QMK commit is unchanged, but a verifiedFor record
+        // is per catalog version by design, so the claim is re-proven, not assumed.
+        {
+          catalogVersion: '0.33.13-2',
+          qmkCommit: '332fa30e173e5b0ecc0c70ff166974b6db86525e',
+          keyboardId: 'crkbd/rev1',
+          verification: 'compile',
+          evidence: 'pnpm socd:matrix catalogs/0.33.13-2 (2026-09-04 run, both policies; .hex, 59491 bytes)',
+        },
+        {
+          catalogVersion: '0.33.13-2',
+          qmkCommit: '332fa30e173e5b0ecc0c70ff166974b6db86525e',
+          keyboardId: 'mode/m256wh',
+          verification: 'compile',
+          evidence:
+            'pnpm socd:matrix catalogs/0.33.13-2 (2026-09-04 run, both policies; .bin, 64696 bytes — ' +
+            'byte-identical size to the 0.33.13-1 run, as expected for an unchanged QMK commit)',
+        },
+        // Catalog 0.33.13-3 (extractor v3 / normalizer v3: community-layout keymaps).
+        {
+          catalogVersion: '0.33.13-3',
+          qmkCommit: '332fa30e173e5b0ecc0c70ff166974b6db86525e',
+          keyboardId: 'crkbd/rev1',
+          verification: 'compile',
+          evidence: 'pnpm socd:matrix catalogs/0.33.13-3 (2026-09-06 run, both policies; .hex, 59491 bytes, same sha256 as the 0.33.13-2 run)',
+        },
+        {
+          catalogVersion: '0.33.13-3',
+          qmkCommit: '332fa30e173e5b0ecc0c70ff166974b6db86525e',
+          keyboardId: 'mode/m256wh',
+          verification: 'compile',
+          evidence: 'pnpm socd:matrix catalogs/0.33.13-3 (2026-09-06 run, both policies; .bin, 64696 bytes, same sha256 as the 0.33.13-2 run)',
+        },
       ],
 
       // D-09's phase-close switch. Enabled today; only plan 05 may set this otherwise.

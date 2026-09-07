@@ -10,9 +10,8 @@
  *   docker compose -f infra/deploy/docker-compose.yml up -d
  */
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import pg from 'pg';
 import type { Configuration } from '@qmk-web-app/domain';
-import { runMigrations } from '../db/migrate.ts';
+import { connectTestDatabase, TEST_DATABASE_URL } from '../db/test-database.ts';
 import { InMemoryConfigurationRepository } from './memory-repository.ts';
 import { PostgresConfigurationRepository } from './postgres-repository.ts';
 import {
@@ -21,24 +20,8 @@ import {
   type ConfigurationRepository,
 } from './types.ts';
 
-const DATABASE_URL =
-  process.env['QWA_TEST_DATABASE_URL'] ??
-  process.env['QWA_DATABASE_URL'] ??
-  'postgres://qwa:qwa_dev_password@127.0.0.1:5433/qwa';
-
-async function postgresAvailable(): Promise<pg.Pool | null> {
-  const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 4, connectionTimeoutMillis: 1500 });
-  try {
-    await pool.query('SELECT 1');
-    await runMigrations(pool);
-    return pool;
-  } catch {
-    await pool.end().catch(() => {});
-    return null;
-  }
-}
-
-const pool = await postgresAvailable();
+// Never the development database: see db/test-database.ts.
+const pool = await connectTestDatabase();
 
 const ALICE = '11111111-1111-4111-8111-111111111111';
 const BOB = '22222222-2222-4222-8222-222222222222';
@@ -116,7 +99,7 @@ if (pool) {
 } else {
   // Visible rather than silent: a skipped security-relevant suite should be obvious.
   console.warn(
-    `\n[repository-contract] Postgres not reachable at ${DATABASE_URL} — running in-memory only.\n` +
+    `\n[repository-contract] Postgres not reachable at ${TEST_DATABASE_URL} — running in-memory only.\n` +
       `  docker compose -f infra/deploy/docker-compose.yml up -d\n`,
   );
 }

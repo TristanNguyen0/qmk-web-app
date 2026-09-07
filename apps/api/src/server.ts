@@ -15,6 +15,12 @@
  *                      development, so request.ip is the raw socket address. The API
  *                      must sit behind a reverse proxy that sets this header in
  *                      production — QWA_TRUST_PROXY must name that hop, never `true`.
+ *   QWA_ASSISTANT_API_KEY  API key for the natural-language assistant: an Anthropic key
+ *                      or an OpenRouter key (`sk-or-...`). Unset disables the assistant
+ *                      entirely (the UI hides it); nothing else depends on it.
+ *   QWA_ASSISTANT_PROVIDER `anthropic` or `openrouter`; inferred from the key if unset.
+ *   QWA_ASSISTANT_MODEL    model id in the provider's naming; each provider defaults to
+ *                      Claude Haiku 4.5, the cheapest model the prompt was tuned on.
  *   QWA_OTEL_EXPORTER_URL  OTLP/HTTP metrics collector endpoint. Unset disables
  *                      telemetry entirely (see apps/api/src/observability/otel.ts) —
  *                      no collector is required to run this process.
@@ -24,6 +30,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import pg from 'pg';
 import { FilesystemArtifactStore } from '@qmk-web-app/artifact-store';
+import { createAssistantProviderFromEnv } from '@qmk-web-app/assistant';
 import { buildApp, PRODUCTION_LOGGER_OPTIONS } from './app.ts';
 import { parseTrustProxy, requireEnv } from './config.ts';
 import { PostgresBuildStore } from '@qmk-web-app/build-queue';
@@ -115,9 +122,20 @@ mkdirSync(artifactDir, { recursive: true, mode: 0o750 });
 const manifest = loadManifest();
 const buildRepository = new PostgresBuildStore(pool);
 
+// The assistant is opt-in by key. Its absence is a normal, supported state, not a
+// degraded one — the status route reports it and the UI hides the panel.
+let assistantProvider;
+try {
+  assistantProvider = createAssistantProviderFromEnv(process.env, { appTitle: 'qmk-web-app' });
+} catch (error) {
+  console.error((error as Error).message);
+  process.exit(1);
+}
+
 const app = buildApp({
   store,
   repository: new PostgresConfigurationRepository(pool),
+  ...(assistantProvider ? { assistant: { provider: assistantProvider } } : {}),
   builds: {
     repository: buildRepository,
     artifacts: new FilesystemArtifactStore(artifactDir),
@@ -143,7 +161,14 @@ registerQueueDepthGauge(buildRepository, {
 });
 
 app.log.info(
-  { catalogDir, artifactDir, versions: store.versions, active: store.activeVersion, telemetry: telemetry.enabled },
+  {
+    catalogDir,
+    artifactDir,
+    versions: store.versions,
+    active: store.activeVersion,
+    telemetry: telemetry.enabled,
+    assistant: assistantProvider ? assistantProvider.model : 'disabled',
+  },
   'catalogs loaded',
 );
 

@@ -137,6 +137,8 @@ export async function runFixtureSet(
       normalizerVersion: context.published.index.normalizerVersion,
       generatedAt: context.published.index.generatedAt,
       keycodeSpecVersion: context.published.index.keycodeSpecVersion,
+      keycodeAliases: context.published.index.keycodeAliases ?? {},
+      communityKeymaps: context.published.index.communityKeymaps ?? {},
       keyboards: [keyboard],
     } satisfies Catalog;
 

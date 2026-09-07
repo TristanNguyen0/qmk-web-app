@@ -7,6 +7,7 @@
  * compile-only verification claim.
  */
 import { describe, expect, it } from 'vitest';
+import { FIXTURE_CATALOG_VERSION } from '@qmk-web-app/qmk-fixtures';
 import { assertValidOfferState, MODULE_REGISTRY, type CuratedModuleEntry } from './module-registry.ts';
 
 const REQUIRED_FIELDS = [
@@ -66,24 +67,29 @@ describe('MODULE_REGISTRY shape', () => {
       // @ts-expect-error intentional mutation attempt against a frozen array
       entry.verifiedFor.push({});
     }).toThrow(TypeError);
-    expect(entry.verifiedFor).toHaveLength(2);
+    expect(entry.verifiedFor.length).toBeGreaterThanOrEqual(4);
   });
 });
 
 describe('verifiedFor', () => {
-  it('records both crkbd/rev1 and mode/m256wh, compile-only, on catalog 0.33.13-1', () => {
+  it('records both crkbd/rev1 and mode/m256wh, compile-only, for every catalog version it names — each earned by its own matrix run', () => {
     const entry = MODULE_REGISTRY['qmkweb/socd_cleaner'];
-    expect(entry.verifiedFor).toHaveLength(2);
+    const versions = [...new Set(entry.verifiedFor.map((r) => r.catalogVersion))].sort();
+    expect(versions.length).toBeGreaterThan(0);
+    expect(versions).toContain(FIXTURE_CATALOG_VERSION);
 
-    const byKeyboard = new Map(entry.verifiedFor.map((r) => [r.keyboardId, r]));
-    expect([...byKeyboard.keys()].sort()).toEqual(['crkbd/rev1', 'mode/m256wh']);
+    for (const catalogVersion of versions) {
+      const records = entry.verifiedFor.filter((r) => r.catalogVersion === catalogVersion);
+      const byKeyboard = new Map(records.map((r) => [r.keyboardId, r]));
+      expect([...byKeyboard.keys()].sort(), catalogVersion).toEqual(['crkbd/rev1', 'mode/m256wh']);
 
-    for (const keyboardId of ['crkbd/rev1', 'mode/m256wh'] as const) {
-      const record = byKeyboard.get(keyboardId);
-      expect(record?.catalogVersion).toBe('0.33.13-1');
-      expect(record?.qmkCommit).toBe('332fa30e173e5b0ecc0c70ff166974b6db86525e');
-      expect(record?.verification).toBe('compile');
-      expect(record?.evidence).toBeTruthy();
+      for (const keyboardId of ['crkbd/rev1', 'mode/m256wh'] as const) {
+        const record = byKeyboard.get(keyboardId);
+        expect(record?.qmkCommit).toBe('332fa30e173e5b0ecc0c70ff166974b6db86525e');
+        expect(record?.verification).toBe('compile');
+        // Each version's record cites its own matrix run, never another version's.
+        expect(record?.evidence).toContain(`catalogs/${catalogVersion}`);
+      }
     }
   });
 

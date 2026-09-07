@@ -11,6 +11,7 @@ import { notFound } from 'next/navigation';
 import { KeymapEditor } from '../../../components/KeymapEditor.tsx';
 import { fetchKeyboard } from '../../../lib/api.ts';
 import type {
+  AssistantStatusResponse,
   ConfigurationResponse,
   SocdCapabilitiesResponse,
   SupportedKeycode,
@@ -47,7 +48,7 @@ export default async function EditorPage({ params }: PageProps) {
 
   const configuration = configBody.configuration;
 
-  const [keyboardResult, keycodesBody, socdCapabilities] = await Promise.all([
+  const [keyboardResult, keycodesBody, socdCapabilities, assistantStatus] = await Promise.all([
     fetchKeyboard(configuration.keyboardId, configuration.catalogVersion),
     apiGet<{ keycodes: SupportedKeycode[] }>(
       `/v1/catalog/${configuration.catalogVersion}/keycodes`,
@@ -57,6 +58,8 @@ export default async function EditorPage({ params }: PageProps) {
     apiGet<SocdCapabilitiesResponse>(
       `/v1/catalog/${configuration.catalogVersion}/socd-capabilities/${configuration.keyboardId}`,
     ),
+    // Whether an assistant exists is the server's to say; the panel hides otherwise.
+    apiGet<AssistantStatusResponse>('/v1/assistant'),
   ]);
 
   if (keyboardResult.kind !== 'supported') {
@@ -101,6 +104,7 @@ export default async function EditorPage({ params }: PageProps) {
         positions={layout.positions}
         keycodes={keycodesBody?.keycodes ?? []}
         socdCapabilities={socdCapabilities}
+        assistantStatus={assistantStatus}
       />
 
       <p style={{ marginTop: '2rem' }}>

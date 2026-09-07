@@ -261,3 +261,50 @@ export function buildLogUrl(buildId: string): string {
 }
 
 export type { Binding, CatalogKeyPosition, Layer, Macro };
+
+/** What the assistant proposes. The client applies it locally; nothing is saved by the server. */
+export interface AssistantProposalResponse {
+  configurationId: string;
+  baseRevision: number;
+  /** True when every operation applied and the candidate passed server validation. */
+  ok: boolean;
+  summary: string;
+  unsupported: { request: string; reason: string; alternative?: string }[];
+  changes: { description: string; layerIndex?: number; position?: number }[];
+  issues: { operation: number; op: string; reason: string; candidates?: string[] }[];
+  validation: { ok: true } | { ok: false; code: string; message: string; fieldErrors: FieldError[] };
+  candidate: { name: string; layers: Layer[]; macros: Macro[]; socd: SocdConfiguration | null };
+  attempts: number;
+}
+
+export interface AssistantStatusResponse {
+  enabled: boolean;
+  model?: string;
+  limits: { maxPromptLength: number; requestsPerOwnerPerHour: number };
+}
+
+export async function requestAssistantProposal(
+  configurationId: string,
+  prompt: string,
+  document: { name: string; layers: Layer[]; macros: Macro[]; socd: SocdConfiguration | null },
+): Promise<AssistantProposalResponse> {
+  const { data } = await request<AssistantProposalResponse>(
+    `/v1/configurations/${configurationId}/assistant`,
+    { method: 'POST', body: { prompt, document } },
+  );
+  return data;
+}
+
+/** Browser-side: QMK's keymap for a layout preset, interpreted for this layout. */
+export async function fetchPresetKeymap(
+  catalogVersion: string,
+  keyboardId: string,
+  layoutId: string,
+  preset: string,
+): Promise<{ available: true; layers: Layer[]; source: string } | { available: false; reason: string }> {
+  const query = new URLSearchParams({ layout: layoutId, preset });
+  const { data } = await request<{ available: true; layers: Layer[]; source: string } | { available: false; reason: string }>(
+    `/v1/catalog/${catalogVersion}/default-keymap/${keyboardId}?${query.toString()}`,
+  );
+  return data;
+}
