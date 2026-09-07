@@ -69,6 +69,18 @@ one of those lines.
    hosted model with reliable tool use, chosen because this is a portfolio project with
    no real user base. Swapping providers touches one file.
 
+### Addendum (2026-09-06): lexical retrieval over the pinned documentation
+
+The model's phrasing of *concepts* (home row mods, tap-vs-hold, what KC_TRANSPARENT means) is
+one place its memory can be stale or vague. Vector retrieval was considered and rejected: the
+corpus is ~170 chunks of pinned markdown, OpenRouter serves no embeddings endpoint, and a second
+paid provider on the proposal path is not justified for this size. Instead the catalog (extractor
+v5) carries the curated docs — layers, mod-tap, tap-hold, macros, keycodes — chunked by heading,
+and `buildDocSearch` runs in-process BM25 (k1=1.5, b=0.75, stop-worded) over the user's prompt,
+injecting at most four excerpts as clearly-labelled *background* below the structured facts.
+The rules still decide what may be proposed; the docs only sharpen the wording. A prompt with no
+lexical overlap retrieves nothing.
+
 ## Consequences
 
 - Prompt injection can waste money but cannot reach firmware: the resolver and

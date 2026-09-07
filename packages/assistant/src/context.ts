@@ -21,6 +21,7 @@ import {
   type SupportedCatalogKeyboard,
   type SupportedKeycode,
 } from '@qmk-web-app/domain';
+import { buildDocSearch, formatDocChunk } from './docs-retrieval.ts';
 import { rowsOf } from './refs.ts';
 
 export interface ContextKey {
@@ -53,6 +54,8 @@ export interface AssistantContext {
    */
   fittedPresets: { name: string; fit: number }[];
   socd: SocdCapabilities;
+  /** Documentation chunks retrieved for `query`, best first, ready for the prompt. */
+  docExcerpts: string[];
   keycodes: readonly SupportedKeycode[];
   limits: typeof LIMITS;
 }
@@ -66,6 +69,8 @@ export const MIN_FITTED_PRESET_SHARE = 0.5;
 export interface BuildContextOptions {
   configuration: Configuration;
   catalog: Catalog;
+  /** The user's prompt: what documentation is retrieved for. Optional in tests. */
+  query?: string;
 }
 
 /** The legend a key shows in the editor; also the resolver's first-preference match. */
@@ -127,6 +132,12 @@ export function buildAssistantContext(options: BuildContextOptions): AssistantCo
     newId: () => '00000000-0000-4000-8000-000000000000',
   });
 
+  const docExcerpts = options.query
+    ? buildDocSearch(catalog.docChunks ?? [])
+        .search(options.query)
+        .map((r) => formatDocChunk(r))
+    : [];
+
   return {
     catalogVersion: catalog.catalogVersion,
     keyboard: { id: entry.keyboardId, displayName: entry.displayName, layout: layout.name, positions: layout.positions.length },
@@ -144,6 +155,7 @@ export function buildAssistantContext(options: BuildContextOptions): AssistantCo
     layoutPresets: exactPresets,
     fittedPresets,
     socd: socdCapabilitiesFor(catalog.catalogVersion, entry.keyboardId),
+    docExcerpts,
     keycodes: SUPPORTED_KEYCODES,
     limits: LIMITS,
   };
@@ -238,6 +250,11 @@ export function renderAssistantContext(ctx: AssistantContext): string {
   out.push('Supported keycodes (nothing else can be bound):');
   for (const [group, names] of groups) out.push(`  ${group}: ${names.join(', ')}`);
   out.push('');
+  if (ctx.docExcerpts.length > 0) {
+    out.push('');
+    out.push('Reference — the relevant QMK documentation for this request (background for your wording; the product\'s rules above still decide what you may propose):');
+    for (const excerpt of ctx.docExcerpts) out.push(excerpt);
+  }
   out.push(
     `Limits: ${ctx.limits.maxLayers} layers, ${ctx.limits.maxMacros} macros, ${ctx.limits.maxMacroSteps} steps per macro, ` +
       `${ctx.limits.maxMacroStepDelayMs} ms per delay, ${ctx.limits.maxMacroTotalDelayMs} ms total delay per macro.`,

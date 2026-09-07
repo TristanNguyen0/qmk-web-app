@@ -62,6 +62,37 @@ def _git_head(qmk_root):
         return None
 
 
+def _markdown_chunks(text, max_chars=1600):
+    """Splits markdown into heading-scoped chunks. Each chunk carries its heading path
+    ('# Keycodes Overview > ## Basic Keycodes') and the raw text below it, up to
+    max_chars. Table rows stay — keycodes.md's per-keycode descriptions are tables.
+    Link targets are dropped ([text](ref) -> text): they are navigation, not content.
+    """
+    import re
+    text = re.sub(r'\[([^\]]+)\]\([^)]*\)', r'\1', text)
+    lines = text.split('\n')
+    chunks = []
+    heading = ''
+    body: list[str] = []
+    for line in lines:
+        is_heading = re.match(r'^#{1,4} ', line) is not None
+        if is_heading or (body and sum(len(l) for l in body) > max_chars):
+            if body and any(l.strip() for l in body):
+                chunks.append((heading, '\n'.join(body).strip()))
+            body = []
+        if is_heading:
+            level = len(line) - len(line.lstrip('#'))
+            title = line[level + 1:].strip()
+            heading = (heading.split(' > ')[0] if level > 1 else '') + (' > ' if heading and level > 1 else '') + title
+            if level == 1:
+                heading = title
+        else:
+            body.append(line)
+    if body and any(l.strip() for l in body):
+        chunks.append((heading, '\n'.join(body).strip()))
+    return chunks
+
+
 def _default_keymap(qmk_root, keyboard):
     """Resolve the keyboard's `default` keymap using QMK's own locator and parser.
 
@@ -177,7 +208,8 @@ def main():
         # v2: each keyboard record carries `default_keymap` (see _default_keymap).
         # v3: one `community_keymap` record per QMK community layout (see below).
         # v4: community_keymap records carry the layout's key geometry (`positions`).
-        'extractorVersion': 4,
+        # v5: one `docs` record: the curated QMK documentation, chunked for retrieval.
+        'extractorVersion': 5,
         'qmkCommit': resolved_commit,
         'commitSource': 'git' if head else 'caller-asserted',
         'qmkRoot': qmk_root,
@@ -233,6 +265,31 @@ def main():
         except Exception as exc:  # noqa: BLE001
             record.update({'status': 'failed', 'error': {'kind': type(exc).__name__, 'message': str(exc)[:2000]}})
         emit(record)
+
+    # The QMK documentation this product's features come from, chunked by heading and
+    # emitted verbatim. A curated list, not the whole tree: the assistant may only
+    # propose what the editor supports, so prose about flashing, RGB, or split boards
+    # would invite suggestions the product must refuse.
+    docs_dir = os.path.join(qmk_root, 'docs')
+    curated_docs = [
+        'feature_layers.md', 'mod_tap.md', 'tap_hold.md', 'feature_macros.md',
+        'keycodes.md', 'feature_advanced_keycodes.md',
+    ]
+    chunks = []
+    for doc in curated_docs:
+        path = os.path.join(docs_dir, doc)
+        if not os.path.isfile(path):
+            continue
+        with open(path, encoding='utf-8') as fh:
+            text = fh.read()
+        for heading, body in _markdown_chunks(text):
+            chunks.append({'doc': doc[:-3], 'heading': heading, 'text': body})
+    emit({
+        'type': 'docs',
+        'source': 'docs/',
+        'files': [d[:-3] for d in curated_docs if os.path.isfile(os.path.join(docs_dir, d))],
+        'chunks': chunks,
+    })
 
     if args.keyboard:
         keyboards = list(args.keyboard)

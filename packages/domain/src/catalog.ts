@@ -105,6 +105,20 @@ export interface CatalogCommunityLayoutRef {
   layout: string;
 }
 
+/**
+ * One chunk of the curated QMK documentation shipped in the pinned tree, split by
+ * heading. Retrieved lexically at request time to ground the assistant's wording in
+ * QMK's own; never a substitute for the structured capability facts.
+ */
+export interface CatalogDocChunk {
+  /** Doc slug, e.g. `mod_tap`. */
+  doc: string;
+  /** Heading path within the doc, e.g. `Mod-Tap {#mod-tap}`. */
+  heading: string;
+  /** Markdown body below the heading, links stripped to their text. */
+  text: string;
+}
+
 export type DefaultKeymapUnavailableReason =
   | 'not_extracted'
   | 'not_found'
@@ -185,6 +199,8 @@ export interface Catalog {
   keycodeAliases: Readonly<Record<string, string>>;
   /** Keyed by community layout name. See `CatalogCommunityKeymap`. */
   communityKeymaps: Readonly<Record<string, CatalogCommunityKeymap>>;
+  /** The pinned tree's curated documentation, chunked for lexical retrieval. */
+  docChunks: readonly CatalogDocChunk[];
   keyboards: readonly CatalogKeyboard[];
 }
 

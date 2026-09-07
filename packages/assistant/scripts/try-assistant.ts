@@ -52,6 +52,7 @@ const catalog: Catalog = {
   keycodeSpecVersion: published.index.keycodeSpecVersion,
   keycodeAliases: aliases,
   communityKeymaps: published.index.communityKeymaps ?? {},
+  docChunks: published.index.docChunks ?? [],
   keyboards: [keyboard],
 };
 

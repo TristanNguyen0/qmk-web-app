@@ -139,6 +139,7 @@ export async function runFixtureSet(
       keycodeSpecVersion: context.published.index.keycodeSpecVersion,
       keycodeAliases: context.published.index.keycodeAliases ?? {},
       communityKeymaps: context.published.index.communityKeymaps ?? {},
+      docChunks: context.published.index.docChunks ?? [],
       keyboards: [keyboard],
     } satisfies Catalog;
 

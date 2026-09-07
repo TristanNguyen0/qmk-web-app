@@ -51,6 +51,7 @@ export function loadPublishedCatalogs(dir: string): LoadedCatalogs {
       keycodeSpecVersion: source.index.keycodeSpecVersion,
       keycodeAliases: source.index.keycodeAliases ?? {},
       communityKeymaps: source.index.communityKeymaps ?? {},
+      docChunks: source.index.docChunks ?? [],
       keyboards: keyboard ? [keyboard] : [],
     } satisfies Catalog;
   };

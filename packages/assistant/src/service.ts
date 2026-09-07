@@ -82,7 +82,7 @@ export async function runAssistant(options: RunAssistantOptions): Promise<Assist
   const { provider, configuration, catalog, prompt } = options;
   const maxAttempts = Math.max(1, options.maxAttempts ?? 2);
 
-  const context = buildAssistantContext({ configuration, catalog });
+  const context = buildAssistantContext({ configuration, catalog, query: prompt });
   const system = `${SYSTEM_RULES}\n\n---\n\n${renderAssistantContext(context)}`;
 
   const usage: ProviderUsage = { inputTokens: 0, outputTokens: 0 };

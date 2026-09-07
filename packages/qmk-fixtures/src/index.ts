@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 
 export const FIXTURE_QMK_COMMIT = '332fa30e173e5b0ecc0c70ff166974b6db86525e';
-export const FIXTURE_CATALOG_VERSION = '0.33.13-4';
+export const FIXTURE_CATALOG_VERSION = '0.33.13-5';
 
 export function readExtractSampleNdjson(): string {
   return readFileSync(join(DATA_DIR, 'extract-sample.ndjson'), 'utf8');

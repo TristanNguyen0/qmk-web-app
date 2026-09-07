@@ -283,6 +283,21 @@ export const MODULE_REGISTRY: Readonly<Record<'qmkweb/socd_cleaner', CuratedModu
           verification: 'compile',
           evidence: 'pnpm socd:matrix catalogs/0.33.13-4 (2026-09-06 run, both policies; .bin, 64696 bytes, same sha256 as the 0.33.13-3 run)',
         },
+        // Catalog 0.33.13-5 (extractor v5 / normalizer v5: curated documentation chunks).
+        {
+          catalogVersion: '0.33.13-5',
+          qmkCommit: '332fa30e173e5b0ecc0c70ff166974b6db86525e',
+          keyboardId: 'crkbd/rev1',
+          verification: 'compile',
+          evidence: 'pnpm socd:matrix catalogs/0.33.13-5 (2026-09-06 run, both policies; .hex, 59491 bytes, same sha256 as the 0.33.13-4 run)',
+        },
+        {
+          catalogVersion: '0.33.13-5',
+          qmkCommit: '332fa30e173e5b0ecc0c70ff166974b6db86525e',
+          keyboardId: 'mode/m256wh',
+          verification: 'compile',
+          evidence: 'pnpm socd:matrix catalogs/0.33.13-5 (2026-09-06 run, both policies; .bin, 64696 bytes, same sha256 as the 0.33.13-4 run)',
+        },
       ],
 
       // D-09's phase-close switch. Enabled today; only plan 05 may set this otherwise.

@@ -8,6 +8,7 @@ export {
 } from './normalize.ts';
 export type {
   ExtractorCommunityKeymapRecord,
+  ExtractorDocsRecord,
   ExtractorDefaultKeymap,
   ExtractorKeyboardRecord,
   ExtractorKeycodeSpec,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readCatalogSample } from '@qmk-web-app/qmk-fixtures';
 import { importDefaultKeymap, type Catalog, type Configuration, type Layer } from '@qmk-web-app/domain';
+import { formatDocChunk } from './docs-retrieval.ts';
 import { buildAssistantContext, renderAssistantContext } from './context.ts';
 import { parseProposal, type AssistantProposal, type Operation } from './proposal.ts';
 import { resolveKey, resolveKeycode, resolveLayer, rowsOf } from './refs.ts';
@@ -425,5 +426,33 @@ describe('assistant context', () => {
   it('says plainly when SOCD is unavailable', () => {
     const text = renderAssistantContext(buildAssistantContext({ configuration: planck(), catalog }));
     expect(text).toMatch(/SOCD: NOT available on this keyboard/);
+  });
+});
+
+describe('docs retrieval', () => {
+  it('retrieves chunks relevant to the prompt and leaves an unrelated prompt with none', async () => {
+    const { buildDocSearch } = await import('./docs-retrieval.ts');
+    const chunks = (readCatalogSample() as { docChunks?: { doc: string; heading: string; text: string }[] }).docChunks ?? [];
+    expect(chunks.length).toBeGreaterThan(100);
+
+    const search = buildDocSearch(chunks);
+    const macroHits = search.search('record a macro that types my email address');
+    expect(macroHits.slice(0, 2).map((h) => h.chunk.doc)).toContain('feature_macros');
+    // Formatting truncates long chunks so the injection stays bounded.
+    for (const hit of macroHits) expect(formatDocChunk(hit).length).toBeLessThanOrEqual(1000);
+
+    // A prompt with no lexical overlap with the documentation retrieves nothing,
+    // rather than the least-bad chunk.
+    expect(search.search('baking sourdough bread on a rainy afternoon')).toEqual([]);
+  });
+
+  it('injects the excerpts into the rendered context, keyed to the prompt', () => {
+    const text = renderAssistantContext(
+      buildAssistantContext({ configuration: crkbd(), catalog, query: 'a macro that types my password' }),
+    );
+    expect(text).toContain('Reference — the relevant QMK documentation');
+    expect(text).toContain('feature_macros');
+    // No query, no section: the context is not padded with random prose.
+    expect(renderAssistantContext(buildAssistantContext({ configuration: crkbd(), catalog }))).not.toContain('Reference —');
   });
 });

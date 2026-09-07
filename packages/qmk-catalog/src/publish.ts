@@ -15,10 +15,10 @@
  */
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Catalog, CatalogCommunityKeymap, CatalogKeyboard } from '@qmk-web-app/domain';
+import type { Catalog, CatalogCommunityKeymap, CatalogDocChunk, CatalogKeyboard } from '@qmk-web-app/domain';
 
-/** v2: `keycodeAliases` in the index. v3: `communityKeymaps` in the index. */
-export const PUBLISH_FORMAT_VERSION = 3;
+/** v2: `keycodeAliases`. v3: `communityKeymaps`. v4: `docChunks`. */
+export const PUBLISH_FORMAT_VERSION = 4;
 
 export interface CatalogIndexEntry {
   keyboardId: string;
@@ -47,6 +47,8 @@ export interface CatalogIndex {
   keycodeAliases?: Readonly<Record<string, string>>;
   /** QMK's community-layout keymaps; see `Catalog.communityKeymaps`. Absent before v3. */
   communityKeymaps?: Readonly<Record<string, CatalogCommunityKeymap>>;
+  /** QMK's curated documentation chunks; see `Catalog.docChunks`. Absent before v4 indexes. */
+  docChunks?: readonly CatalogDocChunk[];
   generatedAt: string;
   totalKeyboards: number;
   supportedKeyboards: number;
@@ -123,6 +125,7 @@ export function publishCatalog(catalog: Catalog, outDir: string): CatalogIndex {
     keycodeSpecVersion: catalog.keycodeSpecVersion,
     keycodeAliases: catalog.keycodeAliases,
     communityKeymaps: catalog.communityKeymaps,
+    docChunks: catalog.docChunks,
     generatedAt: catalog.generatedAt,
     totalKeyboards: keyboards.length,
     supportedKeyboards: supported,

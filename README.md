@@ -25,7 +25,7 @@ still outstanding.
 ```bash
 pnpm install
 pnpm qmk:fetch --submodules            # fetch + verify the pinned QMK tree (~1.5 GB with submodules)
-docker build -t qmk-web-app/qmk-build:0.33.13-5 infra/qmk
+docker build -t qmk-web-app/qmk-build:0.33.13-6 infra/qmk
 
 pnpm catalog:build --dump var/catalog-dumps/<version>.ndjson   # all 3,748 keyboards (~10 min); keep the dump so a
                                                                # normalizer change can republish without re-extracting
@@ -44,7 +44,7 @@ Open a keyboard, edit its keymap, and press **Build firmware**. A `crkbd/rev1` b
 20 seconds end to end.
 
 ```bash
-node --experimental-strip-types services/worker/scripts/smoke-build.ts catalogs/0.33.13-4
+node --experimental-strip-types services/worker/scripts/smoke-build.ts catalogs/0.33.13-5
 ```
 
 The smoke build bypasses the queue and takes a validated configuration straight through generation,
@@ -73,6 +73,11 @@ byte-identical.
   Each keymap also carries its layout's geometry, so an arrangement a board does not declare can
   still be laid onto it by exact physical key position — HHKB onto a 65% gives the alphas and
   modifiers the HHKB arrangement and leaves the board's extra column blank, counted and reported.
+- **Documented concepts, retrieved from the pinned tree.** The catalog carries ~170 chunks of the
+  QMK manual (layers, mod-taps, tap-hold, macros, keycodes) split by heading; the assistant
+  retrieves the few relevant to the prompt with an in-process BM25 and injects them as background.
+  No embeddings, no vector store, no second provider — the corpus is small and the retrieval is
+  deterministic and versioned with the catalog.
 - Keyboards the catalog cannot offer are reachable and explain *why*, rather than 404ing.
 - Click or use arrow keys to inspect a key. Selection is signalled by fill, stroke width, and an
   inset ring, so it never depends on colour alone.
@@ -169,8 +174,8 @@ a request.
 
 ```bash
 pnpm typecheck
-pnpm test          # 648 tests, no Docker required
-pnpm socd:matrix catalogs/0.33.13-4   # real SOCD compiles; needs Docker + the pinned tree
+pnpm test          # 650 tests, no Docker required
+pnpm socd:matrix catalogs/0.33.13-5   # real SOCD compiles; needs Docker + the pinned tree
 ```
 
 `pnpm test` runs the Postgres half of the repository contract suites too, when a database is

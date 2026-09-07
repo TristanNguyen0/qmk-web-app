@@ -15,6 +15,7 @@ import {
   type Catalog,
   type CatalogCommunityKeyGeometry,
   type CatalogCommunityKeymap,
+  type CatalogDocChunk,
   type CatalogCommunityLayoutRef,
   type CatalogDefaultKeymap,
   type CatalogDefaultKeymapLayer,
@@ -30,8 +31,9 @@ import {
  * v2: default keymaps and the keycode alias table (extractor v2 dumps).
  * v3: community-layout keymaps and per-keyboard `communityLayouts` (extractor v3).
  * v4: community keymaps carry their layout geometry (extractor v4).
+ * v5: the curated QMK documentation, chunked (extractor v5).
  */
-export const NORMALIZER_VERSION = 4;
+export const NORMALIZER_VERSION = 5;
 
 /**
  * Longest keycode token we will carry. QMK's longest real composite in a default
@@ -82,14 +84,27 @@ export interface ExtractorCommunityKeymapRecord {
   error?: { kind: string; message: string };
 }
 
+export interface ExtractorDocsRecord {
+  type: 'docs';
+  source?: unknown;
+  files?: unknown;
+  chunks?: unknown;
+}
+
 export type ExtractorRecord =
   | ExtractorProvenance
   | ExtractorKeycodeSpec
   | ExtractorKeyboardRecord
   | ExtractorCommunityKeymapRecord
+  | ExtractorDocsRecord
   | { type: 'summary'; [k: string]: unknown };
 
 export class CatalogNormalizationError extends Error {}
+
+/** Heading anchors QMK generates ({#some-anchor}) are navigation noise, not content. */
+function stripHeadingAnchor(heading: string): string {
+  return heading.replace(/\s*\{#[^}]*\}/g, '').trim();
+}
 
 /** Parses the NDJSON dump. Malformed lines are fatal — a partial catalog is worse than none. */
 export function parseExtractorDump(ndjson: string): ExtractorRecord[] {
@@ -503,6 +518,27 @@ export function normalizeCatalog(records: readonly ExtractorRecord[], options: N
     throw new CatalogNormalizationError('extractor output has no keycode spec record');
   }
 
+  const docChunks: CatalogDocChunk[] = [];
+  const docsRecord = records.find((r): r is ExtractorDocsRecord => r.type === 'docs');
+  if (docsRecord) {
+    if (!Array.isArray(docsRecord.chunks)) throw new CatalogNormalizationError('docs record has no chunk list');
+    for (const entry of docsRecord.chunks as unknown[]) {
+      if (typeof entry !== 'object' || entry === null) {
+        throw new CatalogNormalizationError('docs record contains a chunk that is not an object');
+      }
+      const e = entry as Record<string, unknown>;
+      const doc = e['doc'];
+      const heading = stripHeadingAnchor(typeof e['heading'] === 'string' ? e['heading'] : '');
+      const text = e['text'];
+      if (typeof doc !== 'string' || !/^[a-z0-9_]+$/.test(doc) || heading === '' || typeof text !== 'string' || text === '') {
+        throw new CatalogNormalizationError('docs record contains an unusable chunk');
+      }
+      if (text.length > 4000) throw new CatalogNormalizationError(`docs chunk from ${doc} is unexpectedly large`);
+      docChunks.push({ doc, heading, text });
+    }
+    docChunks.sort((a, b) => (a.doc + a.heading < b.doc + b.heading ? -1 : 1));
+  }
+
   const keyboardRecords = records.filter((r): r is ExtractorKeyboardRecord => r.type === 'keyboard');
   if (keyboardRecords.length === 0) {
     throw new CatalogNormalizationError('extractor output contains no keyboards');
@@ -530,6 +566,7 @@ export function normalizeCatalog(records: readonly ExtractorRecord[], options: N
     keycodeSpecVersion: keycodeSpec.version,
     keycodeAliases: keycodeAliasesFromSpec(keycodeSpec),
     communityKeymaps: Object.fromEntries(Object.entries(communityKeymaps).sort(([a], [b]) => (a < b ? -1 : 1))),
+    docChunks,
     keyboards,
   };
 }

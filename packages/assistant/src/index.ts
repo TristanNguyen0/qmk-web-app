@@ -51,3 +51,5 @@ export {
 export type { OpenAICompatibleProviderOptions, OpenRouterProviderOptions } from './openai-compatible.ts';
 export { createAssistantProviderFromEnv, inferProviderKind } from './factory.ts';
 export type { AssistantEnv, AssistantProviderKind } from './factory.ts';
+export { buildDocSearch, formatDocChunk } from './docs-retrieval.ts';
+export type { DocSearch } from './docs-retrieval.ts';

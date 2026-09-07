@@ -22,6 +22,7 @@ import { join } from 'node:path';
 import type {
   Catalog,
   CatalogCommunityKeymap,
+  CatalogDocChunk,
   CatalogKeyboard,
   CatalogLayout,
   SupportedCatalogKeyboard,
@@ -56,6 +57,7 @@ export interface CatalogMeta {
   keycodeAliases: Readonly<Record<string, string>>;
   /** QMK's community-layout keymaps. Empty for catalogs published before them. */
   communityKeymaps: Readonly<Record<string, CatalogCommunityKeymap>>;
+  docChunks: readonly CatalogDocChunk[];
   generatedAt: string;
   totalKeyboards: number;
   supportedKeyboards: number;
@@ -140,6 +142,7 @@ class InMemoryBackend implements Backend {
       keycodeSpecVersion: catalog.keycodeSpecVersion,
       keycodeAliases: catalog.keycodeAliases ?? {},
       communityKeymaps: catalog.communityKeymaps ?? {},
+      docChunks: catalog.docChunks ?? [],
       generatedAt: catalog.generatedAt,
       totalKeyboards: catalog.keyboards.length,
       supportedKeyboards: supported,
@@ -171,6 +174,7 @@ class PublishedBackend implements Backend {
       keycodeSpecVersion: index.keycodeSpecVersion,
       keycodeAliases: index.keycodeAliases ?? {},
       communityKeymaps: index.communityKeymaps ?? {},
+      docChunks: index.docChunks ?? [],
       generatedAt: index.generatedAt,
       totalKeyboards: index.totalKeyboards,
       supportedKeyboards: index.supportedKeyboards,
