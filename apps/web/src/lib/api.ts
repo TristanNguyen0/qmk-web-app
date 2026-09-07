@@ -6,7 +6,7 @@
  * So this file contains no keyboard knowledge whatsoever: it only describes the shape
  * of what the server said. Every fact rendered by the UI arrives through here.
  */
-import type { CatalogKeyPosition } from '@qmk-web-app/domain';
+import type { CatalogKeyPosition, Layer } from '@qmk-web-app/domain';
 
 const API_BASE = process.env['QWA_API_URL'] ?? 'http://127.0.0.1:3001';
 
@@ -57,6 +57,8 @@ export interface KeyboardDetail {
   platform: string | null;
   features: Record<string, boolean>;
   layouts: KeyboardLayoutDetail[];
+  /** Standard arrangements QMK ships a keymap for and this keyboard supports. */
+  communityLayouts: { name: string; layout: string }[];
   provenance: { keyboardFolder: string; qmkCommit: string; parseWarnings: string[] };
 }
 
@@ -147,4 +149,39 @@ export async function fetchKeyboard(
     keyboard: body['keyboard'] as KeyboardDetail,
     catalogVersion: body['catalogVersion'] as string,
   };
+}
+
+/**
+ * The keyboard's QMK default keymap, interpreted by the server into product bindings
+ * for one layout. `unmapped` lists what QMK's default contains that this product cannot
+ * represent; those positions are left unassigned so the user sees the gap.
+ */
+export type DefaultKeymapResult =
+  | {
+      available: true;
+      source: string;
+      sourceLayout: string;
+      layers: Layer[];
+      unmapped: { layerIndex: number; position: number; keycode: string }[];
+      droppedLayers: number;
+      unmatchedPositions: number;
+    }
+  | { available: false; reason: string };
+
+export async function fetchDefaultKeymap(
+  keyboardId: string,
+  layoutId: string,
+  version = 'latest',
+  preset?: string,
+): Promise<DefaultKeymapResult> {
+  try {
+    const query = new URLSearchParams({ layout: layoutId });
+    if (preset) query.set('preset', preset);
+    return await getJson<DefaultKeymapResult>(
+      `/v1/catalog/${version}/default-keymap/${keyboardId}?${query.toString()}`,
+    );
+  } catch (error) {
+    // A missing default is a reason to start blank, never a reason to fail the page.
+    return { available: false, reason: error instanceof ApiError ? error.message : 'unreachable' };
+  }
 }

@@ -1597,7 +1597,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_SWAP_CONTROL_CAPS_LOCK",
-   "label": "Swap LCtl⇄Caps"
+   "label": "Swap LCtl\u21c4Caps"
   },
   "0x7001": {
    "aliases": [
@@ -1605,7 +1605,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_UNSWAP_CONTROL_CAPS_LOCK",
-   "label": "Unswap LCtl⇄Caps"
+   "label": "Unswap LCtl\u21c4Caps"
   },
   "0x7002": {
    "aliases": [
@@ -1613,7 +1613,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_TOGGLE_CONTROL_CAPS_LOCK",
-   "label": "Toggle LCtl⇄Caps"
+   "label": "Toggle LCtl\u21c4Caps"
   },
   "0x7003": {
    "aliases": [
@@ -1621,7 +1621,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_CAPS_LOCK_AS_CONTROL_OFF",
-   "label": "Caps≠LCtl"
+   "label": "Caps\u2260LCtl"
   },
   "0x7004": {
    "aliases": [
@@ -1637,7 +1637,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_SWAP_LALT_LGUI",
-   "label": "Swap LAlt⇄LGUI"
+   "label": "Swap LAlt\u21c4LGUI"
   },
   "0x7006": {
    "aliases": [
@@ -1645,7 +1645,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_UNSWAP_LALT_LGUI",
-   "label": "Unswap LAlt⇄LGUI"
+   "label": "Unswap LAlt\u21c4LGUI"
   },
   "0x7007": {
    "aliases": [
@@ -1653,7 +1653,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_SWAP_RALT_RGUI",
-   "label": "Swap RAlt⇄RGUI"
+   "label": "Swap RAlt\u21c4RGUI"
   },
   "0x7008": {
    "aliases": [
@@ -1661,7 +1661,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_UNSWAP_RALT_RGUI",
-   "label": "Unswap RAlt⇄RGUI"
+   "label": "Unswap RAlt\u21c4RGUI"
   },
   "0x7009": {
    "aliases": [
@@ -1693,7 +1693,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_SWAP_GRAVE_ESC",
-   "label": "Swap `⇄Esc"
+   "label": "Swap `\u21c4Esc"
   },
   "0x700D": {
    "aliases": [
@@ -1701,7 +1701,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_UNSWAP_GRAVE_ESC",
-   "label": "Unswap `⇄Esc"
+   "label": "Unswap `\u21c4Esc"
   },
   "0x700E": {
    "aliases": [
@@ -1709,7 +1709,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_SWAP_BACKSLASH_BACKSPACE",
-   "label": "Swap \\⇄Bspc"
+   "label": "Swap \\\u21c4Bspc"
   },
   "0x700F": {
    "aliases": [
@@ -1717,7 +1717,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_UNSWAP_BACKSLASH_BACKSPACE",
-   "label": "Unswap \\⇄Bspc"
+   "label": "Unswap \\\u21c4Bspc"
   },
   "0x7010": {
    "aliases": [
@@ -1725,7 +1725,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_TOGGLE_BACKSLASH_BACKSPACE",
-   "label": "Toggle \\⇄Bspc"
+   "label": "Toggle \\\u21c4Bspc"
   },
   "0x7011": {
    "aliases": [
@@ -1757,7 +1757,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_SWAP_ALT_GUI",
-   "label": "Swap Alt⇄GUI"
+   "label": "Swap Alt\u21c4GUI"
   },
   "0x7015": {
    "aliases": [
@@ -1765,7 +1765,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_UNSWAP_ALT_GUI",
-   "label": "Unswap Alt⇄GUI"
+   "label": "Unswap Alt\u21c4GUI"
   },
   "0x7016": {
    "aliases": [
@@ -1773,7 +1773,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_TOGGLE_ALT_GUI",
-   "label": "Toggle Alt⇄GUI"
+   "label": "Toggle Alt\u21c4GUI"
   },
   "0x7017": {
    "aliases": [
@@ -1781,7 +1781,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_SWAP_LCTL_LGUI",
-   "label": "Swap LCtl⇄LGUI"
+   "label": "Swap LCtl\u21c4LGUI"
   },
   "0x7018": {
    "aliases": [
@@ -1789,7 +1789,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_UNSWAP_LCTL_LGUI",
-   "label": "Unswap LCtl⇄LGUI"
+   "label": "Unswap LCtl\u21c4LGUI"
   },
   "0x7019": {
    "aliases": [
@@ -1797,7 +1797,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_SWAP_RCTL_RGUI",
-   "label": "Swap RCtl⇄RGUI"
+   "label": "Swap RCtl\u21c4RGUI"
   },
   "0x701A": {
    "aliases": [
@@ -1805,7 +1805,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_UNSWAP_RCTL_RGUI",
-   "label": "Unswap RCtl⇄RGUI"
+   "label": "Unswap RCtl\u21c4RGUI"
   },
   "0x701B": {
    "aliases": [
@@ -1813,7 +1813,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_SWAP_CTL_GUI",
-   "label": "Swap Ctl⇄GUI"
+   "label": "Swap Ctl\u21c4GUI"
   },
   "0x701C": {
    "aliases": [
@@ -1821,7 +1821,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_UNSWAP_CTL_GUI",
-   "label": "Unswap Ctl⇄GUI"
+   "label": "Unswap Ctl\u21c4GUI"
   },
   "0x701D": {
    "aliases": [
@@ -1829,7 +1829,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_TOGGLE_CTL_GUI",
-   "label": "Toggle Ctl⇄GUI"
+   "label": "Toggle Ctl\u21c4GUI"
   },
   "0x701E": {
    "aliases": [
@@ -1853,7 +1853,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_SWAP_ESCAPE_CAPS_LOCK",
-   "label": "Swap Esc⇄Caps"
+   "label": "Swap Esc\u21c4Caps"
   },
   "0x7021": {
    "aliases": [
@@ -1861,7 +1861,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_UNSWAP_ESCAPE_CAPS_LOCK",
-   "label": "Unswap Esc⇄Caps"
+   "label": "Unswap Esc\u21c4Caps"
   },
   "0x7022": {
    "aliases": [
@@ -1869,7 +1869,7 @@
    ],
    "group": "magic",
    "key": "QK_MAGIC_TOGGLE_ESCAPE_CAPS_LOCK",
-   "label": "Toggle Esc⇄Caps"
+   "label": "Toggle Esc\u21c4Caps"
   },
   "0x7100": {
    "aliases": [
@@ -1901,7 +1901,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_C_0",
-   "label": "C₀"
+   "label": "C\u2080"
   },
   "0x7104": {
    "aliases": [
@@ -1910,7 +1910,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_C_SHARP_0",
-   "label": "C♯₀"
+   "label": "C\u266f\u2080"
   },
   "0x7105": {
    "aliases": [
@@ -1918,7 +1918,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_D_0",
-   "label": "D₀"
+   "label": "D\u2080"
   },
   "0x7106": {
    "aliases": [
@@ -1927,7 +1927,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_D_SHARP_0",
-   "label": "D♯₀"
+   "label": "D\u266f\u2080"
   },
   "0x7107": {
    "aliases": [
@@ -1935,7 +1935,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_E_0",
-   "label": "E₀"
+   "label": "E\u2080"
   },
   "0x7108": {
    "aliases": [
@@ -1943,7 +1943,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_F_0",
-   "label": "F₀"
+   "label": "F\u2080"
   },
   "0x7109": {
    "aliases": [
@@ -1952,7 +1952,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_F_SHARP_0",
-   "label": "F♯₀"
+   "label": "F\u266f\u2080"
   },
   "0x710A": {
    "aliases": [
@@ -1960,7 +1960,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_G_0",
-   "label": "G₀"
+   "label": "G\u2080"
   },
   "0x710B": {
    "aliases": [
@@ -1969,7 +1969,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_G_SHARP_0",
-   "label": "G♯₀"
+   "label": "G\u266f\u2080"
   },
   "0x710C": {
    "aliases": [
@@ -1977,7 +1977,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_A_0",
-   "label": "A₀"
+   "label": "A\u2080"
   },
   "0x710D": {
    "aliases": [
@@ -1986,7 +1986,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_A_SHARP_0",
-   "label": "A♯₀"
+   "label": "A\u266f\u2080"
   },
   "0x710E": {
    "aliases": [
@@ -1994,7 +1994,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_B_0",
-   "label": "B₀"
+   "label": "B\u2080"
   },
   "0x710F": {
    "aliases": [
@@ -2002,7 +2002,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_C_1",
-   "label": "C₁"
+   "label": "C\u2081"
   },
   "0x7110": {
    "aliases": [
@@ -2011,7 +2011,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_C_SHARP_1",
-   "label": "C♯₁"
+   "label": "C\u266f\u2081"
   },
   "0x7111": {
    "aliases": [
@@ -2019,7 +2019,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_D_1",
-   "label": "D₁"
+   "label": "D\u2081"
   },
   "0x7112": {
    "aliases": [
@@ -2028,7 +2028,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_D_SHARP_1",
-   "label": "D♯₁"
+   "label": "D\u266f\u2081"
   },
   "0x7113": {
    "aliases": [
@@ -2036,7 +2036,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_E_1",
-   "label": "E₁"
+   "label": "E\u2081"
   },
   "0x7114": {
    "aliases": [
@@ -2044,7 +2044,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_F_1",
-   "label": "F₁"
+   "label": "F\u2081"
   },
   "0x7115": {
    "aliases": [
@@ -2053,7 +2053,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_F_SHARP_1",
-   "label": "F♯₁"
+   "label": "F\u266f\u2081"
   },
   "0x7116": {
    "aliases": [
@@ -2061,7 +2061,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_G_1",
-   "label": "G₁"
+   "label": "G\u2081"
   },
   "0x7117": {
    "aliases": [
@@ -2070,7 +2070,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_G_SHARP_1",
-   "label": "G♯₁"
+   "label": "G\u266f\u2081"
   },
   "0x7118": {
    "aliases": [
@@ -2078,7 +2078,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_A_1",
-   "label": "A₁"
+   "label": "A\u2081"
   },
   "0x7119": {
    "aliases": [
@@ -2087,7 +2087,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_A_SHARP_1",
-   "label": "A♯₁"
+   "label": "A\u266f\u2081"
   },
   "0x711A": {
    "aliases": [
@@ -2095,7 +2095,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_B_1",
-   "label": "B₁"
+   "label": "B\u2081"
   },
   "0x711B": {
    "aliases": [
@@ -2103,7 +2103,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_C_2",
-   "label": "C₂"
+   "label": "C\u2082"
   },
   "0x711C": {
    "aliases": [
@@ -2112,7 +2112,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_C_SHARP_2",
-   "label": "C♯₂"
+   "label": "C\u266f\u2082"
   },
   "0x711D": {
    "aliases": [
@@ -2120,7 +2120,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_D_2",
-   "label": "D₂"
+   "label": "D\u2082"
   },
   "0x711E": {
    "aliases": [
@@ -2129,7 +2129,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_D_SHARP_2",
-   "label": "D♯₂"
+   "label": "D\u266f\u2082"
   },
   "0x711F": {
    "aliases": [
@@ -2137,7 +2137,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_E_2",
-   "label": "E₂"
+   "label": "E\u2082"
   },
   "0x7120": {
    "aliases": [
@@ -2145,7 +2145,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_F_2",
-   "label": "F₂"
+   "label": "F\u2082"
   },
   "0x7121": {
    "aliases": [
@@ -2154,7 +2154,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_F_SHARP_2",
-   "label": "F♯₂"
+   "label": "F\u266f\u2082"
   },
   "0x7122": {
    "aliases": [
@@ -2162,7 +2162,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_G_2",
-   "label": "G₂"
+   "label": "G\u2082"
   },
   "0x7123": {
    "aliases": [
@@ -2171,7 +2171,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_G_SHARP_2",
-   "label": "G♯₂"
+   "label": "G\u266f\u2082"
   },
   "0x7124": {
    "aliases": [
@@ -2179,7 +2179,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_A_2",
-   "label": "A₂"
+   "label": "A\u2082"
   },
   "0x7125": {
    "aliases": [
@@ -2188,7 +2188,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_A_SHARP_2",
-   "label": "A♯₂"
+   "label": "A\u266f\u2082"
   },
   "0x7126": {
    "aliases": [
@@ -2196,7 +2196,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_B_2",
-   "label": "B₂"
+   "label": "B\u2082"
   },
   "0x7127": {
    "aliases": [
@@ -2204,7 +2204,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_C_3",
-   "label": "C₃"
+   "label": "C\u2083"
   },
   "0x7128": {
    "aliases": [
@@ -2213,7 +2213,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_C_SHARP_3",
-   "label": "C♯₃"
+   "label": "C\u266f\u2083"
   },
   "0x7129": {
    "aliases": [
@@ -2221,7 +2221,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_D_3",
-   "label": "D₃"
+   "label": "D\u2083"
   },
   "0x712A": {
    "aliases": [
@@ -2230,7 +2230,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_D_SHARP_3",
-   "label": "D♯₃"
+   "label": "D\u266f\u2083"
   },
   "0x712B": {
    "aliases": [
@@ -2238,7 +2238,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_E_3",
-   "label": "E₃"
+   "label": "E\u2083"
   },
   "0x712C": {
    "aliases": [
@@ -2246,7 +2246,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_F_3",
-   "label": "F₃"
+   "label": "F\u2083"
   },
   "0x712D": {
    "aliases": [
@@ -2255,7 +2255,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_F_SHARP_3",
-   "label": "F♯₃"
+   "label": "F\u266f\u2083"
   },
   "0x712E": {
    "aliases": [
@@ -2263,7 +2263,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_G_3",
-   "label": "G₃"
+   "label": "G\u2083"
   },
   "0x712F": {
    "aliases": [
@@ -2272,7 +2272,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_G_SHARP_3",
-   "label": "G♯₃"
+   "label": "G\u266f\u2083"
   },
   "0x7130": {
    "aliases": [
@@ -2280,7 +2280,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_A_3",
-   "label": "A₃"
+   "label": "A\u2083"
   },
   "0x7131": {
    "aliases": [
@@ -2289,7 +2289,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_A_SHARP_3",
-   "label": "A♯₃"
+   "label": "A\u266f\u2083"
   },
   "0x7132": {
    "aliases": [
@@ -2297,7 +2297,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_B_3",
-   "label": "B₃"
+   "label": "B\u2083"
   },
   "0x7133": {
    "aliases": [
@@ -2305,7 +2305,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_C_4",
-   "label": "C₄"
+   "label": "C\u2084"
   },
   "0x7134": {
    "aliases": [
@@ -2314,7 +2314,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_C_SHARP_4",
-   "label": "C♯₄"
+   "label": "C\u266f\u2084"
   },
   "0x7135": {
    "aliases": [
@@ -2322,7 +2322,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_D_4",
-   "label": "D₄"
+   "label": "D\u2084"
   },
   "0x7136": {
    "aliases": [
@@ -2331,7 +2331,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_D_SHARP_4",
-   "label": "D♯₄"
+   "label": "D\u266f\u2084"
   },
   "0x7137": {
    "aliases": [
@@ -2339,7 +2339,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_E_4",
-   "label": "E₄"
+   "label": "E\u2084"
   },
   "0x7138": {
    "aliases": [
@@ -2347,7 +2347,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_F_4",
-   "label": "F₄"
+   "label": "F\u2084"
   },
   "0x7139": {
    "aliases": [
@@ -2356,7 +2356,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_F_SHARP_4",
-   "label": "F♯₄"
+   "label": "F\u266f\u2084"
   },
   "0x713A": {
    "aliases": [
@@ -2364,7 +2364,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_G_4",
-   "label": "G₄"
+   "label": "G\u2084"
   },
   "0x713B": {
    "aliases": [
@@ -2373,7 +2373,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_G_SHARP_4",
-   "label": "G♯₄"
+   "label": "G\u266f\u2084"
   },
   "0x713C": {
    "aliases": [
@@ -2381,7 +2381,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_A_4",
-   "label": "A₄"
+   "label": "A\u2084"
   },
   "0x713D": {
    "aliases": [
@@ -2390,7 +2390,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_A_SHARP_4",
-   "label": "A♯₄"
+   "label": "A\u266f\u2084"
   },
   "0x713E": {
    "aliases": [
@@ -2398,7 +2398,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_B_4",
-   "label": "B₄"
+   "label": "B\u2084"
   },
   "0x713F": {
    "aliases": [
@@ -2406,7 +2406,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_C_5",
-   "label": "C₅"
+   "label": "C\u2085"
   },
   "0x7140": {
    "aliases": [
@@ -2415,7 +2415,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_C_SHARP_5",
-   "label": "C♯₅"
+   "label": "C\u266f\u2085"
   },
   "0x7141": {
    "aliases": [
@@ -2423,7 +2423,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_D_5",
-   "label": "D₅"
+   "label": "D\u2085"
   },
   "0x7142": {
    "aliases": [
@@ -2432,7 +2432,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_D_SHARP_5",
-   "label": "D♯₅"
+   "label": "D\u266f\u2085"
   },
   "0x7143": {
    "aliases": [
@@ -2440,7 +2440,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_E_5",
-   "label": "E₅"
+   "label": "E\u2085"
   },
   "0x7144": {
    "aliases": [
@@ -2448,7 +2448,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_F_5",
-   "label": "F₅"
+   "label": "F\u2085"
   },
   "0x7145": {
    "aliases": [
@@ -2457,7 +2457,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_F_SHARP_5",
-   "label": "F♯₅"
+   "label": "F\u266f\u2085"
   },
   "0x7146": {
    "aliases": [
@@ -2465,7 +2465,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_G_5",
-   "label": "G₅"
+   "label": "G\u2085"
   },
   "0x7147": {
    "aliases": [
@@ -2474,7 +2474,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_G_SHARP_5",
-   "label": "G♯₅"
+   "label": "G\u266f\u2085"
   },
   "0x7148": {
    "aliases": [
@@ -2482,7 +2482,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_A_5",
-   "label": "A₅"
+   "label": "A\u2085"
   },
   "0x7149": {
    "aliases": [
@@ -2491,7 +2491,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_A_SHARP_5",
-   "label": "A♯₅"
+   "label": "A\u266f\u2085"
   },
   "0x714A": {
    "aliases": [
@@ -2499,7 +2499,7 @@
    ],
    "group": "midi",
    "key": "QK_MIDI_NOTE_B_5",
-   "label": "B₅"
+   "label": "B\u2085"
   },
   "0x714B": {
    "aliases": [

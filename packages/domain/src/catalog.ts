@@ -35,6 +35,73 @@ export interface CatalogLayout {
   positions: readonly CatalogKeyPosition[];
 }
 
+export interface CatalogDefaultKeymapLayer {
+  /**
+   * The layer's designator as written in QMK's keymap source — a C identifier such
+   * as `_LOWER`, a number, or null when the source (keymap.json) names none.
+   * Presentation and cross-reference only; never emitted into generated source.
+   */
+  name: string | null;
+  /**
+   * QMK keycode tokens verbatim, one per position of `layout`, exactly as QMK's own
+   * keymap parser reports them. Aliases are NOT resolved (`KC_BSPC` stays `KC_BSPC`)
+   * and composite keycodes are unparsed strings (`LT(1,KC_SPC)`). Interpreting them
+   * is the product's job (see `default-keymap.ts`), not the catalog's.
+   */
+  keycodes: readonly string[];
+}
+
+/**
+ * The keyboard's `default` keymap as shipped in the pinned QMK tree, resolved by
+ * QMK's own locator and parser. A fact about the tree — the product uses it as a
+ * starting point, clearly attributed, never as the user's own choices.
+ */
+export type CatalogDefaultKeymap =
+  | {
+      available: true;
+      /** Path within the QMK tree, e.g. `keyboards/planck/keymaps/default/keymap.c`. */
+      source: string;
+      /** The layout macro every layer targets, resolved through QMK's layout aliases. */
+      layout: string;
+      layers: readonly CatalogDefaultKeymapLayer[];
+    }
+  | {
+      available: false;
+      reason: DefaultKeymapUnavailableReason;
+      /** Operator-facing detail. Not shown to end users verbatim. */
+      detail: string;
+    };
+
+/**
+ * QMK's canonical keymap for one community layout (`layouts/default/<name>/…`), e.g.
+ * the HHKB arrangement for `60_hhkb`. Global: which keyboards it applies to is each
+ * keyboard's `communityLayouts`. Same verbatim-token contract as `CatalogDefaultKeymap`.
+ */
+export interface CatalogCommunityKeymap {
+  /** Community layout name, e.g. `60_hhkb`. Also the layout macro minus `LAYOUT_`. */
+  name: string;
+  source: string;
+  layers: readonly CatalogDefaultKeymapLayer[];
+}
+
+/** A community layout this keyboard supports, and the keyboard's own macro for it. */
+export interface CatalogCommunityLayoutRef {
+  /** e.g. `60_hhkb` — key into `Catalog.communityKeymaps`. */
+  name: string;
+  /** The keyboard's layout macro, after its `layout_aliases`; e.g. `LAYOUT_60_hhkb`. */
+  layout: string;
+}
+
+export type DefaultKeymapUnavailableReason =
+  | 'not_extracted'
+  | 'not_found'
+  | 'extraction_failed'
+  | 'no_layers'
+  | 'unknown_layout'
+  | 'mixed_layouts'
+  | 'layer_length_mismatch'
+  | 'unreadable_keycode';
+
 export interface CatalogKeyboardProvenance {
   /** Path within the QMK tree this record was resolved from. */
   keyboardFolder: string;
@@ -56,6 +123,13 @@ export interface SupportedCatalogKeyboard {
   layouts: readonly CatalogLayout[];
   /** QMK feature flags as reported, used for capability gating. */
   features: Readonly<Record<string, boolean>>;
+  defaultKeymap: CatalogDefaultKeymap;
+  /**
+   * Community layouts this keyboard declares AND for which the catalog holds a keymap
+   * whose layers fit the keyboard's `LAYOUT_<name>` macro position for position. Each
+   * is a grounded "layout preset" (HHKB, WKL, ISO, …) the product may offer.
+   */
+  communityLayouts: readonly CatalogCommunityLayoutRef[];
   provenance: CatalogKeyboardProvenance;
 }
 
@@ -89,6 +163,15 @@ export interface Catalog {
   generatedAt: string;
   /** Keycode spec version resolved from the pinned tree. */
   keycodeSpecVersion: string;
+  /**
+   * QMK's own alias table at the pinned revision: alias → canonical keycode name
+   * (`KC_BSPC` → `KC_BACKSPACE`, `_______` → `KC_TRANSPARENT`). Read from the keycode
+   * spec QMK ships, never hand-written. Needed to interpret default keymaps and any
+   * other QMK-authored keycode text.
+   */
+  keycodeAliases: Readonly<Record<string, string>>;
+  /** Keyed by community layout name. See `CatalogCommunityKeymap`. */
+  communityKeymaps: Readonly<Record<string, CatalogCommunityKeymap>>;
   keyboards: readonly CatalogKeyboard[];
 }
 

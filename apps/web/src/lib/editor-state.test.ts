@@ -287,3 +287,21 @@ describe('SOCD', () => {
     expect(next.document.socd).toBeNull();
   });
 });
+
+describe('replace_document', () => {
+  it('applies a whole document as one undoable step and clamps the active layer', () => {
+    const initial = run(state(doc({ layers: [layer(0), layer(1), layer(2)] })), { type: 'select_layer', index: 2 });
+    const proposal = doc({ name: 'Proposed', layers: [layer(0, { '1': { kind: 'keycode', keycode: 'KC_DELETE' } })] });
+    const next = run(initial, { type: 'replace_document', document: proposal });
+
+    expect(next.document).toEqual(proposal);
+    expect(next.document).not.toBe(proposal); // cloned, so later mutation of the source cannot leak in
+    expect(next.activeLayerIndex).toBe(0);
+    expect(next.dirty).toBe(true);
+    expect(canUndo(next)).toBe(true);
+
+    const undone = run(next, { type: 'undo' });
+    expect(undone.document.layers).toHaveLength(3);
+    expect(undone.document.name).toBe('Test');
+  });
+});

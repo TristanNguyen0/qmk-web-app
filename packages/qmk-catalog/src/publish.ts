@@ -15,9 +15,10 @@
  */
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Catalog, CatalogKeyboard } from '@qmk-web-app/domain';
+import type { Catalog, CatalogCommunityKeymap, CatalogKeyboard } from '@qmk-web-app/domain';
 
-export const PUBLISH_FORMAT_VERSION = 1;
+/** v2: `keycodeAliases` in the index. v3: `communityKeymaps` in the index. */
+export const PUBLISH_FORMAT_VERSION = 3;
 
 export interface CatalogIndexEntry {
   keyboardId: string;
@@ -42,6 +43,10 @@ export interface CatalogIndex {
   extractorVersion: number;
   normalizerVersion: number;
   keycodeSpecVersion: string;
+  /** QMK's alias → canonical keycode table; see `Catalog.keycodeAliases`. Absent in v1 indexes. */
+  keycodeAliases?: Readonly<Record<string, string>>;
+  /** QMK's community-layout keymaps; see `Catalog.communityKeymaps`. Absent before v3. */
+  communityKeymaps?: Readonly<Record<string, CatalogCommunityKeymap>>;
   generatedAt: string;
   totalKeyboards: number;
   supportedKeyboards: number;
@@ -116,6 +121,8 @@ export function publishCatalog(catalog: Catalog, outDir: string): CatalogIndex {
     extractorVersion: catalog.extractorVersion,
     normalizerVersion: catalog.normalizerVersion,
     keycodeSpecVersion: catalog.keycodeSpecVersion,
+    keycodeAliases: catalog.keycodeAliases,
+    communityKeymaps: catalog.communityKeymaps,
     generatedAt: catalog.generatedAt,
     totalKeyboards: keyboards.length,
     supportedKeyboards: supported,

@@ -110,3 +110,25 @@ export const SESSION_LIMITS = {
 } as const;
 
 export type SessionLimits = typeof SESSION_LIMITS;
+
+/**
+ * Natural-language assistant. Every request is a paid model call made on behalf of an
+ * anonymous session, so the numbers are conservative; a request that is refused here
+ * costs nothing. The assistant never mutates or builds anything itself, so these are
+ * cost controls, not safety controls.
+ */
+export const ASSISTANT_LIMITS = {
+  /** Characters in one prompt. A keymap request is a sentence or two; this is a paragraph. */
+  maxPromptLength: 2000,
+  /** Requests one session may make per rolling hour. */
+  requestsPerOwnerPerHour: 30,
+  requestWindowMs: 60 * 60 * 1000,
+  /** Requests in flight across every session; protects the provider budget under abuse. */
+  maxGlobalInFlight: 4,
+  /** Model calls per request, including the first (one self-correction turn). */
+  maxAttempts: 2,
+  /** Wall clock for one request, all attempts included. */
+  timeoutMs: 60_000,
+} as const;
+
+export type AssistantLimits = typeof ASSISTANT_LIMITS;

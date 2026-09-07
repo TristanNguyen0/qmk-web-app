@@ -1,6 +1,9 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  // Next.js compiles TSX with the automatic runtime (no `import React`); component
+  // render tests need the same setting or every .tsx import fails on `React`.
+  esbuild: { jsx: 'automatic' },
   test: {
     include: ['packages/**/*.test.ts', 'services/**/*.test.ts', 'apps/**/*.test.ts'],
     // Integration tests that need Docker and the pinned checkout opt in explicitly by

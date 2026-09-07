@@ -17,7 +17,8 @@
     "matrix": "node --experimental-strip-types services/worker/scripts/run-matrix.ts",
     "env:verify": "node --experimental-strip-types services/worker/scripts/verify-env-check.ts",
     "dev": "pnpm --parallel --filter @qmk-web-app/api --filter @qmk-web-app/web dev",
-    "worker": "node --experimental-strip-types services/worker/src/main.ts"
+    "worker": "node --experimental-strip-types --env-file-if-exists=.env services/worker/src/main.ts",
+    "assistant:try": "node --experimental-strip-types --env-file-if-exists=.env packages/assistant/scripts/try-assistant.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

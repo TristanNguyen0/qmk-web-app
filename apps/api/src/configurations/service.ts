@@ -47,6 +47,8 @@ export function catalogFor(store: CatalogStore, version: string, keyboardId: str
     normalizerVersion: meta.normalizerVersion,
     generatedAt: meta.generatedAt,
     keycodeSpecVersion: meta.keycodeSpecVersion,
+    keycodeAliases: meta.keycodeAliases,
+    communityKeymaps: meta.communityKeymaps,
     keyboards: keyboard ? [keyboard] : [],
   };
 }

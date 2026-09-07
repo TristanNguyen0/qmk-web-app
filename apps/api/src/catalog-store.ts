@@ -21,6 +21,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
   Catalog,
+  CatalogCommunityKeymap,
   CatalogKeyboard,
   CatalogLayout,
   SupportedCatalogKeyboard,
@@ -51,6 +52,10 @@ export interface CatalogMeta {
   extractorVersion: number;
   normalizerVersion: number;
   keycodeSpecVersion: string;
+  /** QMK's alias → canonical keycode table. Empty for catalogs published before it existed. */
+  keycodeAliases: Readonly<Record<string, string>>;
+  /** QMK's community-layout keymaps. Empty for catalogs published before them. */
+  communityKeymaps: Readonly<Record<string, CatalogCommunityKeymap>>;
   generatedAt: string;
   totalKeyboards: number;
   supportedKeyboards: number;
@@ -133,6 +138,8 @@ class InMemoryBackend implements Backend {
       extractorVersion: catalog.extractorVersion,
       normalizerVersion: catalog.normalizerVersion,
       keycodeSpecVersion: catalog.keycodeSpecVersion,
+      keycodeAliases: catalog.keycodeAliases ?? {},
+      communityKeymaps: catalog.communityKeymaps ?? {},
       generatedAt: catalog.generatedAt,
       totalKeyboards: catalog.keyboards.length,
       supportedKeyboards: supported,
@@ -162,6 +169,8 @@ class PublishedBackend implements Backend {
       extractorVersion: index.extractorVersion,
       normalizerVersion: index.normalizerVersion,
       keycodeSpecVersion: index.keycodeSpecVersion,
+      keycodeAliases: index.keycodeAliases ?? {},
+      communityKeymaps: index.communityKeymaps ?? {},
       generatedAt: index.generatedAt,
       totalKeyboards: index.totalKeyboards,
       supportedKeyboards: index.supportedKeyboards,

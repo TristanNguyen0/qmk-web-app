@@ -17,6 +17,7 @@ import {
   type Macro,
   type SocdConfiguration,
 } from '@qmk-web-app/domain';
+import { newId } from './ids.ts';
 
 /** The editable part of a configuration. Server-controlled fields are not here. */
 export interface EditorDocument {
@@ -53,6 +54,11 @@ export type EditorAction =
   | { type: 'update_macro'; macro: Macro }
   | { type: 'remove_macro'; macroId: string }
   | { type: 'set_socd'; socd: SocdConfiguration | null }
+  /**
+   * Replace the whole document in one step — how an assistant proposal is applied, so
+   * a single undo reverses the whole proposal rather than one key of it.
+   */
+  | { type: 'replace_document'; document: EditorDocument }
   | { type: 'undo' }
   | { type: 'redo' }
   | { type: 'saved'; revision: number };
@@ -141,7 +147,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       const next = clone(state.document);
       const index = next.layers.length;
       next.layers.push({
-        id: crypto.randomUUID(),
+        id: newId(),
         index,
         name: `Layer ${index}`,
         bindings: {},
@@ -238,6 +244,13 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
         }
       }
       return withHistory(state, next);
+    }
+
+    case 'replace_document': {
+      const next = clone(action.document);
+      // Selection and active layer may no longer exist in the new document.
+      const activeLayerIndex = Math.min(state.activeLayerIndex, Math.max(next.layers.length - 1, 0));
+      return { ...withHistory(state, next), activeLayerIndex };
     }
 
     case 'undo': {

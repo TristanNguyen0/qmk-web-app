@@ -1,9 +1,11 @@
 import Fastify, { type FastifyInstance, type FastifyLoggerOptions } from 'fastify';
 import type { ArtifactStore } from '@qmk-web-app/artifact-store';
+import type { AssistantProvider } from '@qmk-web-app/assistant';
 import type { CatalogStore } from './catalog-store.ts';
 import type { BuildEnvironment } from './builds/service.ts';
 import type { BuildRepository } from '@qmk-web-app/build-queue';
 import type { ConfigurationRepository } from './configurations/types.ts';
+import { registerAssistantRoutes, registerAssistantStatusRoute, type AssistantQuota } from './routes/assistant.ts';
 import { registerBuildRoutes } from './routes/builds.ts';
 import { registerCatalogRoutes } from './routes/catalog.ts';
 import { registerConfigurationRoutes } from './routes/configurations.ts';
@@ -22,6 +24,17 @@ export interface BuildAppOptions {
     repository: BuildRepository;
     artifacts: ArtifactStore;
     environment: BuildEnvironment;
+  };
+  /**
+   * Natural-language assistant. Omitted (the default, and what a missing
+   * `QWA_ASSISTANT_API_KEY` produces) registers only the status route, which reports
+   * `enabled: false`; the UI hides the panel. Nothing else in the app depends on it.
+   */
+  assistant?: {
+    provider: AssistantProvider;
+    quota?: AssistantQuota;
+    maxAttempts?: number;
+    timeoutMs?: number;
   };
   /** Set Secure on session cookies. Must be true behind HTTPS in production. */
   secureCookies?: boolean;
@@ -95,6 +108,18 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
 
   registerCatalogRoutes(app, options.store);
   registerConfigurationRoutes(app, options.store, options.repository);
+
+  registerAssistantStatusRoute(app, options.assistant?.provider ?? null);
+  if (options.assistant) {
+    registerAssistantRoutes(app, {
+      store: options.store,
+      configurations: options.repository,
+      provider: options.assistant.provider,
+      ...(options.assistant.quota ? { quota: options.assistant.quota } : {}),
+      ...(options.assistant.maxAttempts !== undefined ? { maxAttempts: options.assistant.maxAttempts } : {}),
+      ...(options.assistant.timeoutMs !== undefined ? { timeoutMs: options.assistant.timeoutMs } : {}),
+    });
+  }
 
   if (options.builds) {
     registerBuildRoutes(app, {

@@ -26,11 +26,14 @@ import {
 import {
   ApiRequestError,
   updateConfiguration,
+  type AssistantProposalResponse,
+  type AssistantStatusResponse,
   type ConfigurationResponse,
   type FieldError,
   type SocdCapabilitiesResponse,
   type SupportedKeycode,
 } from '../lib/client.ts';
+import { AssistantPanel } from './AssistantPanel.tsx';
 import { BindingPicker } from './BindingPicker.tsx';
 import { BuildPanel } from './BuildPanel.tsx';
 import { DataLossNotice } from './DataLossNotice.tsx';
@@ -44,6 +47,8 @@ export interface KeymapEditorProps {
   keycodes: SupportedKeycode[];
   /** Null when the capability lookup failed; the panel says so rather than guessing. */
   socdCapabilities: SocdCapabilitiesResponse | null;
+  /** Null when the status lookup failed or the server has no assistant; the panel hides. */
+  assistantStatus: AssistantStatusResponse | null;
 }
 
 type SaveState =
@@ -59,6 +64,7 @@ export function KeymapEditor({
   positions,
   keycodes,
   socdCapabilities,
+  assistantStatus,
 }: KeymapEditorProps) {
   const [state, dispatch] = useReducer(
     editorReducer,
@@ -81,6 +87,19 @@ export function KeymapEditor({
 
   const layout = useMemo(() => fitToWidth(positions, 1000, { gapPx: 3 }), [positions]);
   const activeLayer = state.document.layers.find((l) => l.index === state.activeLayerIndex);
+
+  // Keys a pending assistant proposal would change, as "layer:position", so the user
+  // can see where it lands before applying. Cleared when applied or discarded.
+  const [proposedKeys, setProposedKeys] = useState<Set<string>>(new Set());
+  const previewProposal = useCallback((changes: AssistantProposalResponse['changes'] | null) => {
+    const next = new Set<string>();
+    for (const change of changes ?? []) {
+      if (change.layerIndex !== undefined && change.position !== undefined) {
+        next.add(`${change.layerIndex}:${change.position}`);
+      }
+    }
+    setProposedKeys(next);
+  }, []);
 
   const persist = useCallback(async () => {
     setSave({ status: 'saving' });
@@ -274,16 +293,17 @@ export function KeymapEditor({
             const binding = activeLayer?.bindings[String(key.index)];
             const label = describeBinding(binding, state.document.macros);
             const isSelected = key.index === state.selectedPosition;
+            const isProposed = proposedKeys.has(`${state.activeLayerIndex}:${key.index}`);
             return (
               <g
                 key={key.index}
                 tabIndex={0}
                 role="button"
                 aria-pressed={isSelected}
-                aria-label={`Position ${key.index}: ${label ?? 'unassigned'}`}
+                aria-label={`Position ${key.index}: ${label ?? 'unassigned'}${isProposed ? ' (would change)' : ''}`}
                 className={`key${isSelected ? ' key--selected' : ''}${
                   label === null ? ' key--unassigned' : ''
-                }`}
+                }${isProposed ? ' key--proposed' : ''}`}
                 transform={
                   key.rotation === 0
                     ? undefined
@@ -352,6 +372,14 @@ export function KeymapEditor({
           )}
         </div>
       </div>
+
+      <AssistantPanel
+        configurationId={configuration.id}
+        status={assistantStatus}
+        document={state.document}
+        onApply={(document) => dispatch({ type: 'replace_document', document })}
+        onPreview={previewProposal}
+      />
 
       <MacroEditor
         macros={state.document.macros}

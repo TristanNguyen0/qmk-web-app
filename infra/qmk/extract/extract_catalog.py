@@ -62,6 +62,78 @@ def _git_head(qmk_root):
         return None
 
 
+def _default_keymap(qmk_root, keyboard):
+    """Resolve the keyboard's `default` keymap using QMK's own locator and parser.
+
+    Returns a dict with `status` of `resolved`, `not_found`, or `failed`. A resolved
+    record carries the layers exactly as QMK reads them — keycode tokens verbatim,
+    aliases unresolved, layer names as written (a C designator such as `_LOWER`, or a
+    number). The normalizer decides whether that is usable and the product decides
+    what any of it means; this function only reports.
+
+    `keymap.c` goes through `qmk.keymap.parse_keymap_c`, the same routine behind
+    `qmk c2json`. It preprocesses with `cpp`, so `#define`d layer names become
+    numbers while `enum` names stay symbolic.
+    """
+    import qmk.keymap  # noqa: E402 — importable only after _add_qmk_to_path
+
+    try:
+        path = qmk.keymap.locate_keymap(keyboard, 'default')
+    except Exception as exc:  # noqa: BLE001 — report, never abort the keyboard
+        return {'status': 'failed', 'error': {'kind': type(exc).__name__, 'message': str(exc)[:2000]}}
+
+    if path is None:
+        return {'status': 'not_found'}
+
+    path = os.path.abspath(str(path))
+    try:
+        relative = os.path.relpath(path, qmk_root)
+    except ValueError:
+        relative = path
+
+    try:
+        # QMK's locator prefers keymap.json when both files exist, but a keymap.json
+        # may carry only `config` while the layers live in the sibling keymap.c — QMK's
+        # build merges the two. Follow the same rule: no `layers` in the JSON means
+        # the C file is the keymap.
+        if path.endswith('.json'):
+            with open(path, encoding='utf-8') as fh:
+                data = json.load(fh)
+            sibling = os.path.join(os.path.dirname(path), 'keymap.c')
+            if 'layers' not in data and os.path.isfile(sibling):
+                path = sibling
+                relative = os.path.relpath(path, qmk_root)
+
+        if path.endswith('.json'):
+            layout = data.get('layout')
+            layers = [
+                {'name': None, 'layout': layout, 'keycodes': layer}
+                for layer in data.get('layers', [])
+            ]
+        else:
+            parsed = qmk.keymap.parse_keymap_c(path)
+            layers = [
+                {
+                    'name': None if layer.get('name') in (False, None) else str(layer['name']),
+                    'layout': None if layer.get('layout') in (False, None) else layer['layout'],
+                    'keycodes': layer.get('keycodes', []),
+                }
+                for layer in parsed.get('layers', [])
+            ]
+        return {
+            'status': 'resolved',
+            'source': relative,
+            'format': 'json' if path.endswith('.json') else 'c',
+            'layers': layers,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            'status': 'failed',
+            'source': relative,
+            'error': {'kind': type(exc).__name__, 'message': str(exc)[:2000]},
+        }
+
+
 def emit(record):
     json.dump(record, sys.stdout, sort_keys=True, separators=(',', ':'))
     sys.stdout.write('\n')
@@ -98,10 +170,13 @@ def main():
     import qmk.keycodes  # noqa: E402
     import qmk.keyboard  # noqa: E402
     import qmk.info  # noqa: E402
+    import qmk.keymap  # noqa: E402
 
     emit({
         'type': 'provenance',
-        'extractorVersion': 1,
+        # v2: each keyboard record carries `default_keymap` (see _default_keymap).
+        # v3: one `community_keymap` record per QMK community layout (see below).
+        'extractorVersion': 3,
         'qmkCommit': resolved_commit,
         'commitSource': 'git' if head else 'caller-asserted',
         'qmkRoot': qmk_root,
@@ -119,6 +194,34 @@ def main():
         'keycodes': spec.get('keycodes', {}),
         'ranges': spec.get('ranges', {}),
     })
+
+    # QMK's canonical keymap for each community layout (`layouts/default/<name>/
+    # default_<name>/keymap.c`): the HHKB arrangement, ANSI/ISO/WKL/Tsangan 60s,
+    # ortho grids, and so on. Global facts, not per keyboard; a keyboard's own
+    # `community_layouts` (in its info) says which apply to it.
+    layouts_dir = os.path.join(qmk_root, 'layouts', 'default')
+    for name in sorted(os.listdir(layouts_dir)) if os.path.isdir(layouts_dir) else []:
+        keymap_c = os.path.join(layouts_dir, name, f'default_{name}', 'keymap.c')
+        if not os.path.isfile(keymap_c):
+            continue
+        record = {'type': 'community_keymap', 'layout': name}
+        try:
+            parsed = qmk.keymap.parse_keymap_c(keymap_c)
+            record.update({
+                'status': 'resolved',
+                'source': os.path.relpath(keymap_c, qmk_root),
+                'layers': [
+                    {
+                        'name': None if layer.get('name') in (False, None) else str(layer['name']),
+                        'layout': None if layer.get('layout') in (False, None) else layer['layout'],
+                        'keycodes': layer.get('keycodes', []),
+                    }
+                    for layer in parsed.get('layers', [])
+                ],
+            })
+        except Exception as exc:  # noqa: BLE001
+            record.update({'status': 'failed', 'error': {'kind': type(exc).__name__, 'message': str(exc)[:2000]}})
+        emit(record)
 
     if args.keyboard:
         keyboards = list(args.keyboard)
@@ -138,6 +241,7 @@ def main():
                 'status': 'resolved',
                 # Verbatim QMK output. The normalizer decides what is usable.
                 'info': info,
+                'default_keymap': _default_keymap(qmk_root, kb),
             })
             ok += 1
         except Exception as exc:  # noqa: BLE001 — a broken keyboard must not abort the run

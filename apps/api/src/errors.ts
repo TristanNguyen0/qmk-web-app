@@ -15,7 +15,16 @@ export interface ApiErrorBody {
     // RATE_LIMITED is transport-level, not a domain ErrorCode: a session-issuance
     // refusal is not a build-queue condition, and reusing BUILD_QUEUE_LIMITED would
     // make that code a lie (see 05-05-PLAN.md planner_notes).
-    code: ErrorCode | 'BAD_REQUEST' | 'NOT_FOUND' | 'INTERNAL_ERROR' | 'RATE_LIMITED';
+    code:
+      | ErrorCode
+      | 'BAD_REQUEST'
+      | 'NOT_FOUND'
+      | 'INTERNAL_ERROR'
+      | 'RATE_LIMITED'
+      // Assistant conditions are likewise transport-level: a missing provider or an
+      // upstream failure is not a fact about the configuration.
+      | 'ASSISTANT_DISABLED'
+      | 'ASSISTANT_FAILED';
     message: string;
     fieldErrors?: readonly FieldError[];
   };

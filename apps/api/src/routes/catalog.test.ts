@@ -230,3 +230,85 @@ describe('SOCD capabilities', () => {
     expect(status).toBe(404);
   });
 });
+
+describe('default keymap', () => {
+  it('interprets the QMK default keymap for the requested layout, with attribution', async () => {
+    const { status, body } = await get(
+      '/v1/catalog/latest/default-keymap/crkbd/rev1?layout=LAYOUT_split_3x6_3',
+    );
+    expect(status).toBe(200);
+    expect(body['apiVersion']).toBe(1);
+    expect(body['catalogVersion']).toBe(catalog.catalogVersion);
+    expect(body['keyboardId']).toBe('crkbd/rev1');
+    expect(body['layoutId']).toBe('LAYOUT_split_3x6_3');
+    expect(body['available']).toBe(true);
+    expect(body['source']).toBe('keyboards/crkbd/keymaps/default/keymap.c');
+
+    const layers = body['layers'] as { index: number; name: string; bindings: Record<string, unknown> }[];
+    expect(layers.map((l) => l.index)).toEqual([0, 1, 2, 3]);
+    expect(layers[0]?.name).toBe('Base');
+    // Real keys from the pinned tree, alias-resolved into the product's names.
+    expect(layers[0]?.bindings['0']).toEqual({ kind: 'keycode', keycode: 'KC_TAB' });
+    expect(layers[0]?.bindings['1']).toEqual({ kind: 'keycode', keycode: 'KC_Q' });
+    // crkbd's default binds MO(1)/MO(2) on the thumbs.
+    expect(Object.values(layers[0]!.bindings)).toContainEqual({ kind: 'layer_momentary', layer: 1 });
+    // QK_BOOT on layer 3 cannot be represented and is reported, not substituted.
+    const unmapped = body['unmapped'] as { layerIndex: number; position: number; keycode: string }[];
+    expect(unmapped.some((u) => u.keycode === 'QK_BOOT' && u.layerIndex === 3)).toBe(true);
+    for (const u of unmapped) expect(layers[u.layerIndex]?.bindings[String(u.position)]).toBeUndefined();
+  });
+
+  it('carries the default across to a different layout of the same keyboard', async () => {
+    const { status, body } = await get(
+      '/v1/catalog/latest/default-keymap/crkbd/rev1?layout=LAYOUT_split_3x5_3',
+    );
+    expect(status).toBe(200);
+    expect(body['available']).toBe(true);
+    expect(body['sourceLayout']).toBe('LAYOUT_split_3x6_3');
+    const layers = body['layers'] as { bindings: Record<string, unknown> }[];
+    // The 3x5 layout drops the outer columns; every remaining switch still gets its key.
+    expect(Object.keys(layers[0]!.bindings).length).toBeGreaterThan(30);
+    expect(body['unmatchedPositions']).toBe(0);
+  });
+
+  it('requires a layout the keyboard actually declares', async () => {
+    expect((await get('/v1/catalog/latest/default-keymap/crkbd/rev1')).status).toBe(400);
+    expect(
+      (await get('/v1/catalog/latest/default-keymap/crkbd/rev1?layout=LAYOUT_made_up')).status,
+    ).toBe(404);
+  });
+
+  it('404s for unknown or unsupported keyboards and rejects malformed ids', async () => {
+    expect((await get('/v1/catalog/latest/default-keymap/broken/kb?layout=LAYOUT')).status).toBe(404);
+    expect((await get('/v1/catalog/latest/default-keymap/nope/kb?layout=LAYOUT')).status).toBe(404);
+    expect((await get('/v1/catalog/latest/default-keymap/..%2F..%2Fetc?layout=LAYOUT')).status).toBe(400);
+  });
+});
+
+describe('layout presets', () => {
+  it('lists the keyboard’s community layouts in its detail', async () => {
+    const { body } = await get('/v1/catalog/latest/keyboards/crkbd/rev1');
+    const keyboard = body['keyboard'] as { communityLayouts: { name: string; layout: string }[] };
+    expect(keyboard.communityLayouts).toEqual([
+      { name: 'split_3x5_3', layout: 'LAYOUT_split_3x5_3' },
+      { name: 'split_3x6_3', layout: 'LAYOUT_split_3x6_3' },
+    ]);
+  });
+
+  it('imports QMK’s community keymap for a preset onto the requested layout', async () => {
+    const { status, body } = await get(
+      '/v1/catalog/latest/default-keymap/crkbd/rev1?layout=LAYOUT_split_3x6_3&preset=split_3x6_3',
+    );
+    expect(status).toBe(200);
+    expect(body['preset']).toBe('split_3x6_3');
+    expect(body['available']).toBe(true);
+    expect(body['source']).toBe('layouts/default/split_3x6_3/default_split_3x6_3/keymap.c');
+    const layers = body['layers'] as { bindings: Record<string, unknown> }[];
+    expect(layers[0]?.bindings['1']).toEqual({ kind: 'keycode', keycode: 'KC_Q' });
+  });
+
+  it('404s a preset the keyboard does not offer and 400s a malformed one', async () => {
+    expect((await get('/v1/catalog/latest/default-keymap/crkbd/rev1?layout=LAYOUT_split_3x6_3&preset=60_hhkb')).status).toBe(404);
+    expect((await get('/v1/catalog/latest/default-keymap/crkbd/rev1?layout=LAYOUT_split_3x6_3&preset=../x')).status).toBe(400);
+  });
+});

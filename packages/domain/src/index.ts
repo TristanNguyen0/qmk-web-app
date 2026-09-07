@@ -6,6 +6,7 @@ export * from './module-registry.ts';
 export * from './configuration.ts';
 export * from './configuration-file.ts';
 export * from './catalog.ts';
+export * from './default-keymap.ts';
 export * from './build.ts';
 export * from './errors.ts';
 export * from './validate.ts';
